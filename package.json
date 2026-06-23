@@ -1,0 +1,21 @@
+{
+  "name": "war-of-the-three-friend",
+  "version": "1.0.0",
+  "description": "War of the Three Friend - Online Multiplayer Board Game (สงครามสามก๊กเพื่อนซี้)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

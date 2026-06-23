@@ -1,0 +1,9 @@
+node_modules/
+npm-debug.log*
+.env
+.DS_Store
+Thumbs.db
+*.log
+
+# รูปถ่ายคู่มือกฎ (อ้างอิงเท่านั้น ไม่จำเป็นต่อแอป)
+Rule/

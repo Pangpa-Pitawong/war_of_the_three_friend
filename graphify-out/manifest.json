@@ -1,0 +1,397 @@
+{
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\.claude\\launch.json": {
+    "mtime": 1782153806.1394343,
+    "ast_hash": "52e9bec84db504b0d07c1f0cd1661e1f",
+    "semantic_hash": "52e9bec84db504b0d07c1f0cd1661e1f"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\package.json": {
+    "mtime": 1782152602.6228573,
+    "ast_hash": "d407329cf60c24521d088cd098f3c536",
+    "semantic_hash": "d407329cf60c24521d088cd098f3c536"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\public\\js\\data.js": {
+    "mtime": 1782153053.7263618,
+    "ast_hash": "e8cc41d75585ceb9729fb3b56ee61f21",
+    "semantic_hash": "e8cc41d75585ceb9729fb3b56ee61f21"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\public\\js\\game.js": {
+    "mtime": 1782157421.4482505,
+    "ast_hash": "efc4ab095d9f306fb513704caa341e88",
+    "semantic_hash": "efc4ab095d9f306fb513704caa341e88"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\server.js": {
+    "mtime": 1782157395.5295496,
+    "ast_hash": "8ced6bb0e00a7548cda9bd595af8b68d",
+    "semantic_hash": "8ced6bb0e00a7548cda9bd595af8b68d"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\public\\index.html": {
+    "mtime": 1782156698.8833437,
+    "ast_hash": "9d6579eba0a618baf9826f2e950ee0c1",
+    "semantic_hash": "9d6579eba0a618baf9826f2e950ee0c1"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\BackCard\\Screenshot 2026-06-23 011011.png": {
+    "mtime": 1782151823.9516609,
+    "ast_hash": "7711f63a56bde93459dd82b5bb61e4c4",
+    "semantic_hash": "7711f63a56bde93459dd82b5bb61e4c4"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\BasicCard\\Attack.png": {
+    "mtime": 1782148836.9923384,
+    "ast_hash": "ac4750bc0cdb3f3a680cfc22fb286e39",
+    "semantic_hash": "ac4750bc0cdb3f3a680cfc22fb286e39"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\BasicCard\\Dodge.png": {
+    "mtime": 1782148756.2131624,
+    "ast_hash": "2b5b0e040c00d7869799bd6f43befcbf",
+    "semantic_hash": "2b5b0e040c00d7869799bd6f43befcbf"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\BasicCard\\Peach.png": {
+    "mtime": 1782148809.2189815,
+    "ast_hash": "677a204b52d70f8758b5faa811476c5f",
+    "semantic_hash": "677a204b52d70f8758b5faa811476c5f"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Armor\\Eight Trigrams Formation.png": {
+    "mtime": 1782150082.456949,
+    "ast_hash": "5387c95ccea1b4ebd8659ea653e6f487",
+    "semantic_hash": "5387c95ccea1b4ebd8659ea653e6f487"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Armor\\Nio Shield.png": {
+    "mtime": 1782150053.835338,
+    "ast_hash": "7cf401cb1609a9bb5b771439fba4024d",
+    "semantic_hash": "7cf401cb1609a9bb5b771439fba4024d"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Mount\\Fergana Steed.png": {
+    "mtime": 1782149978.0088186,
+    "ast_hash": "855903efd61243a24e5262cab3569ebb",
+    "semantic_hash": "855903efd61243a24e5262cab3569ebb"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Mount\\Shadowrunner.png": {
+    "mtime": 1782150014.4213922,
+    "ast_hash": "b9ada14b3a1bc469236a5327efbe494b",
+    "semantic_hash": "b9ada14b3a1bc469236a5327efbe494b"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Weapon\\Blue Steel Sword.png": {
+    "mtime": 1782149946.368209,
+    "ast_hash": "d9fc6d193bc2255cd88b87118fd0ffb6",
+    "semantic_hash": "d9fc6d193bc2255cd88b87118fd0ffb6"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Weapon\\Frost Sword.png": {
+    "mtime": 1782149684.4646626,
+    "ast_hash": "dbea2ccb4e404ee41184b4fcd9ac1c8c",
+    "semantic_hash": "dbea2ccb4e404ee41184b4fcd9ac1c8c"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Weapon\\Green Dragon Blade.png": {
+    "mtime": 1782149828.3935876,
+    "ast_hash": "2a973e92aee63b41c85f6b449ae75720",
+    "semantic_hash": "2a973e92aee63b41c85f6b449ae75720"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Weapon\\Kirin Bow.png": {
+    "mtime": 1782149751.9361584,
+    "ast_hash": "f72c6940399d598900010ec48faa6fcf",
+    "semantic_hash": "f72c6940399d598900010ec48faa6fcf"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Weapon\\Rock Cleaving Axe.png": {
+    "mtime": 1782149873.7288327,
+    "ast_hash": "ddffd7df3d19a804b0967ef5c3dda8ae",
+    "semantic_hash": "ddffd7df3d19a804b0967ef5c3dda8ae"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Weapon\\Serpent Spear.png": {
+    "mtime": 1782149853.9909098,
+    "ast_hash": "8eb05e0f22d6b6cab2db2de3bdc606bf",
+    "semantic_hash": "8eb05e0f22d6b6cab2db2de3bdc606bf"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Weapon\\Sky Piercing Halberd.png": {
+    "mtime": 1782149902.7205453,
+    "ast_hash": "2b38de4a63fb53bf807f3c0db039243d",
+    "semantic_hash": "2b38de4a63fb53bf807f3c0db039243d"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Weapon\\Yin-Yang Swords.png": {
+    "mtime": 1782149924.616718,
+    "ast_hash": "07bdc124a4ce3d39dcc58fdfccf9c25f",
+    "semantic_hash": "07bdc124a4ce3d39dcc58fdfccf9c25f"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\Equipment Card\\Weapon\\Zhuge Crossbow.png": {
+    "mtime": 1782149773.8482413,
+    "ast_hash": "aed22f6706d2b181056b5b5a48600929",
+    "semantic_hash": "aed22f6706d2b181056b5b5a48600929"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\StratagemCard\\Conditional\\Lightning.png": {
+    "mtime": 1782149038.263175,
+    "ast_hash": "ae766e035bb17898c83d6f7e672d7072",
+    "semantic_hash": "ae766e035bb17898c83d6f7e672d7072"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\StratagemCard\\Conditional\\Overindulgence.png": {
+    "mtime": 1782149107.40887,
+    "ast_hash": "a74e8f2d31f34efc5879dccb9698e54c",
+    "semantic_hash": "a74e8f2d31f34efc5879dccb9698e54c"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\StratagemCard\\Non-Conditional\\Barbarian Invasion.png": {
+    "mtime": 1782149319.5128884,
+    "ast_hash": "b7e6a3f1b81f4698c34b451e9b2f6e09",
+    "semantic_hash": "b7e6a3f1b81f4698c34b451e9b2f6e09"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\StratagemCard\\Non-Conditional\\Borrowed Sword.png": {
+    "mtime": 1782149345.3381965,
+    "ast_hash": "52c49e7230317023a672d5728b44f1b0",
+    "semantic_hash": "52c49e7230317023a672d5728b44f1b0"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\StratagemCard\\Non-Conditional\\Bumper Harvest.png": {
+    "mtime": 1782149193.682585,
+    "ast_hash": "ca46b16a725c06826a93edb18c319d00",
+    "semantic_hash": "ca46b16a725c06826a93edb18c319d00"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\StratagemCard\\Non-Conditional\\Burning Bridges.png": {
+    "mtime": 1782149292.0919163,
+    "ast_hash": "a96d3fbeea7a97c0aaafec50f53072d7",
+    "semantic_hash": "a96d3fbeea7a97c0aaafec50f53072d7"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\StratagemCard\\Non-Conditional\\Duel.png": {
+    "mtime": 1782149491.5839884,
+    "ast_hash": "d761ee6072b125aa3533a456d60ede2e",
+    "semantic_hash": "d761ee6072b125aa3533a456d60ede2e"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\StratagemCard\\Non-Conditional\\Negation.png": {
+    "mtime": 1782149260.4379888,
+    "ast_hash": "3b2f68aa7b5af734c350ee3b7d4de7b0",
+    "semantic_hash": "3b2f68aa7b5af734c350ee3b7d4de7b0"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\StratagemCard\\Non-Conditional\\Oath of the Peach Garden.png": {
+    "mtime": 1782149237.398488,
+    "ast_hash": "7262f5313b199c84da46624b079ee55c",
+    "semantic_hash": "7262f5313b199c84da46624b079ee55c"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\StratagemCard\\Non-Conditional\\Raining Arrows.png": {
+    "mtime": 1782149388.8390093,
+    "ast_hash": "a327a08cfd1f0bc7dd9e1ed75c56a156",
+    "semantic_hash": "a327a08cfd1f0bc7dd9e1ed75c56a156"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\StratagemCard\\Non-Conditional\\Something Out of Noting.png": {
+    "mtime": 1782149463.6245134,
+    "ast_hash": "391eacb399a6b0854e904bc408cfd888",
+    "semantic_hash": "391eacb399a6b0854e904bc408cfd888"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GameCard\\StratagemCard\\Non-Conditional\\Steal.png": {
+    "mtime": 1782149533.5437083,
+    "ast_hash": "fefc93baed11d0830743e4b65d229e48",
+    "semantic_hash": "fefc93baed11d0830743e4b65d229e48"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\QUH\\Diao Chan.png": {
+    "mtime": 1782148434.614482,
+    "ast_hash": "fcd264fd8e6db72940884beaf4f0ecc9",
+    "semantic_hash": "fcd264fd8e6db72940884beaf4f0ecc9"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\QUH\\Gongsun Zan.png": {
+    "mtime": 1782148499.206712,
+    "ast_hash": "9b9fd7ed34fe3bd750ee0e817c873bc7",
+    "semantic_hash": "9b9fd7ed34fe3bd750ee0e817c873bc7"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\QUH\\Hua Tuo.png": {
+    "mtime": 1782148365.5664463,
+    "ast_hash": "1812449a1c407398c44633dc2c6e06a4",
+    "semantic_hash": "1812449a1c407398c44633dc2c6e06a4"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\QUH\\Hua Xiong.png": {
+    "mtime": 1782148468.1257632,
+    "ast_hash": "9b9c5c5166ba9765401475ea7c23606d",
+    "semantic_hash": "9b9c5c5166ba9765401475ea7c23606d"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\QUH\\Lv Bu.png": {
+    "mtime": 1782148403.3130233,
+    "ast_hash": "7685be3611cd40add6f0689f02d6ae6f",
+    "semantic_hash": "7685be3611cd40add6f0689f02d6ae6f"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\QUH\\Pan Feng.png": {
+    "mtime": 1782148524.7267492,
+    "ast_hash": "a9e394878caa937207f387ad10b9d65b",
+    "semantic_hash": "a9e394878caa937207f387ad10b9d65b"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\SHU\\Guan Yu.png": {
+    "mtime": 1782147730.5354989,
+    "ast_hash": "bc298739e48cfae15894ced38f29cd29",
+    "semantic_hash": "bc298739e48cfae15894ced38f29cd29"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\SHU\\Huang Yueying.png": {
+    "mtime": 1782147907.3905132,
+    "ast_hash": "4a2623ffd605c65b3a5ab43975eec178",
+    "semantic_hash": "4a2623ffd605c65b3a5ab43975eec178"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\SHU\\Lady Gan.png": {
+    "mtime": 1782147931.5793512,
+    "ast_hash": "9036bcdedc447671ab2d0aa0f8884740",
+    "semantic_hash": "9036bcdedc447671ab2d0aa0f8884740"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\SHU\\Liu Bei.png": {
+    "mtime": 1782147667.9333057,
+    "ast_hash": "5c10b2e5a5dcd15c53880a0229d6e38d",
+    "semantic_hash": "5c10b2e5a5dcd15c53880a0229d6e38d"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\SHU\\Ma Chao.png": {
+    "mtime": 1782147864.1904743,
+    "ast_hash": "c13a5411f1ccbf5ef12c5e3e7435083c",
+    "semantic_hash": "c13a5411f1ccbf5ef12c5e3e7435083c"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\SHU\\Zhang Fei.png": {
+    "mtime": 1782147759.697675,
+    "ast_hash": "065102dae53faf2c6fabf04b401d5eb9",
+    "semantic_hash": "065102dae53faf2c6fabf04b401d5eb9"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\SHU\\Zhao Yun.png": {
+    "mtime": 1782147830.0443883,
+    "ast_hash": "3f59311ff77cb2f5f1be2fda115d5c9e",
+    "semantic_hash": "3f59311ff77cb2f5f1be2fda115d5c9e"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\SHU\\Zhuge Liang.png": {
+    "mtime": 1782147795.0899656,
+    "ast_hash": "674b1d18ee45acacec6f0012c8f56d57",
+    "semantic_hash": "674b1d18ee45acacec6f0012c8f56d57"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WEI\\Cao Cao.png": {
+    "mtime": 1782147286.9951477,
+    "ast_hash": "c151b17504a8c7cc0a1577126fdfd455",
+    "semantic_hash": "c151b17504a8c7cc0a1577126fdfd455"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WEI\\Guo Jia.png": {
+    "mtime": 1782147496.8069193,
+    "ast_hash": "66533094ea8b81c505a49f68f02c1c33",
+    "semantic_hash": "66533094ea8b81c505a49f68f02c1c33"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WEI\\Sima Yi.png": {
+    "mtime": 1782147333.813197,
+    "ast_hash": "2ffd8402b61a956c9f5d579ae956c32f",
+    "semantic_hash": "2ffd8402b61a956c9f5d579ae956c32f"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WEI\\Xiahou Dun.png": {
+    "mtime": 1782147378.3294282,
+    "ast_hash": "009fb9fddaed0fc46d8bf1c4d3392a4b",
+    "semantic_hash": "009fb9fddaed0fc46d8bf1c4d3392a4b"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WEI\\Xu Zhu.png": {
+    "mtime": 1782147455.5130825,
+    "ast_hash": "b828d6834b242cad6b3666ec64664eae",
+    "semantic_hash": "b828d6834b242cad6b3666ec64664eae"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WEI\\Yue Jin.png": {
+    "mtime": 1782147566.0052576,
+    "ast_hash": "93d7b5eb2b443d2979ac4f00f3b4cad2",
+    "semantic_hash": "93d7b5eb2b443d2979ac4f00f3b4cad2"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WEI\\Zhang Liao.png": {
+    "mtime": 1782147410.0021074,
+    "ast_hash": "72057461a7341819b27be26db3fe1344",
+    "semantic_hash": "72057461a7341819b27be26db3fe1344"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WEI\\Zhen Ji.png": {
+    "mtime": 1782147529.608106,
+    "ast_hash": "59276f6014439b15e9d405e162b2fe7b",
+    "semantic_hash": "59276f6014439b15e9d405e162b2fe7b"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WU\\Da Qiao.png": {
+    "mtime": 1782148150.7162435,
+    "ast_hash": "8b9af0a5d51d3df73ab768bcbeeecafb",
+    "semantic_hash": "8b9af0a5d51d3df73ab768bcbeeecafb"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WU\\Gan Ning.png": {
+    "mtime": 1782148017.7370253,
+    "ast_hash": "768a8df5fd588a85977065848f116157",
+    "semantic_hash": "768a8df5fd588a85977065848f116157"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WU\\Huang Gai.png": {
+    "mtime": 1782148078.391078,
+    "ast_hash": "f4fac21de353366c553751123fd32784",
+    "semantic_hash": "f4fac21de353366c553751123fd32784"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WU\\Lu Xun.png": {
+    "mtime": 1782148179.49479,
+    "ast_hash": "bede64ee7c63b810a71a8f31842ae756",
+    "semantic_hash": "bede64ee7c63b810a71a8f31842ae756"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WU\\Lv Meng.png": {
+    "mtime": 1782148053.993458,
+    "ast_hash": "75d37b6c64f3e3c6b942e7c83f874b45",
+    "semantic_hash": "75d37b6c64f3e3c6b942e7c83f874b45"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WU\\Sun Quan.png": {
+    "mtime": 1782147990.4256332,
+    "ast_hash": "e0b053c86e63002af050e8595bf34d25",
+    "semantic_hash": "e0b053c86e63002af050e8595bf34d25"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WU\\Sun Shangxiang.png": {
+    "mtime": 1782148213.1000693,
+    "ast_hash": "91515cc465d3524c5ef5cad852a20eb9",
+    "semantic_hash": "91515cc465d3524c5ef5cad852a20eb9"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\GeneralCard\\WU\\Zhou Yu.png": {
+    "mtime": 1782148116.0559592,
+    "ast_hash": "29047e49ffcb213600aef880523f0a21",
+    "semantic_hash": "29047e49ffcb213600aef880523f0a21"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Roll\\\u0e01\u0e1a\u0e0e.png": {
+    "mtime": 1782152196.8814442,
+    "ast_hash": "cd417af77b9dd32c1cb9fe6028199651",
+    "semantic_hash": "cd417af77b9dd32c1cb9fe6028199651"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Roll\\\u0e08\u0e31\u0e01\u0e23\u0e1e\u0e23\u0e23\u0e14\u0e34.png": {
+    "mtime": 1782152091.0734024,
+    "ast_hash": "776a27f1ff5210a377b6638f393e01a7",
+    "semantic_hash": "776a27f1ff5210a377b6638f393e01a7"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Roll\\\u0e17\u0e23\u0e22\u0e28.png": {
+    "mtime": 1782152232.1067078,
+    "ast_hash": "92c16852f9b267c582bccb97bc5ed52f",
+    "semantic_hash": "92c16852f9b267c582bccb97bc5ed52f"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Roll\\\u0e20\u0e31\u0e01\u0e14\u0e35.png": {
+    "mtime": 1782152132.045016,
+    "ast_hash": "a339dd891fd7af87d4013c7f9b5c6217",
+    "semantic_hash": "a339dd891fd7af87d4013c7f9b5c6217"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Rule\\IMG_9704.jpg": {
+    "mtime": 1782154871.983646,
+    "ast_hash": "2bacbe45944483624eb698bd87196641",
+    "semantic_hash": "2bacbe45944483624eb698bd87196641"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Rule\\IMG_9705.jpg": {
+    "mtime": 1782154878.4804187,
+    "ast_hash": "01c77d3070be99b5d5694e01d1ea89b0",
+    "semantic_hash": "01c77d3070be99b5d5694e01d1ea89b0"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Rule\\IMG_9706.jpg": {
+    "mtime": 1782154882.9902117,
+    "ast_hash": "175d0e6c8eab0ee41ae7436479e8a440",
+    "semantic_hash": "175d0e6c8eab0ee41ae7436479e8a440"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Rule\\IMG_9707.jpg": {
+    "mtime": 1782154887.5405476,
+    "ast_hash": "106b0ee99cd2d1098372124b5cd12e5e",
+    "semantic_hash": "106b0ee99cd2d1098372124b5cd12e5e"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Rule\\IMG_9708.jpg": {
+    "mtime": 1782156239.464031,
+    "ast_hash": "51d214817776ae49c456e151c8de5dfd",
+    "semantic_hash": "51d214817776ae49c456e151c8de5dfd"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Rule\\IMG_9709.jpg": {
+    "mtime": 1782154895.0788934,
+    "ast_hash": "e00e76b14a4d3735caa70da4e9a07e61",
+    "semantic_hash": "e00e76b14a4d3735caa70da4e9a07e61"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Rule\\IMG_9710.jpg": {
+    "mtime": 1782154901.9244764,
+    "ast_hash": "c0a30ba6c7e0db1a0c43fa8b6d494eb6",
+    "semantic_hash": "c0a30ba6c7e0db1a0c43fa8b6d494eb6"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Rule\\IMG_9711.jpg": {
+    "mtime": 1782154905.833151,
+    "ast_hash": "9030ce223d50ce5e5b3a40afb4003928",
+    "semantic_hash": "9030ce223d50ce5e5b3a40afb4003928"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Rule\\IMG_9712.jpg": {
+    "mtime": 1782154911.5964973,
+    "ast_hash": "c06d91bf15f45639ca4ef0c7f3a93c17",
+    "semantic_hash": "c06d91bf15f45639ca4ef0c7f3a93c17"
+  },
+  "C:\\Users\\pangp\\Desktop\\War of the Three Friend (WTF)\\Rule\\IMG_9713.jpg": {
+    "mtime": 1782154917.1198988,
+    "ast_hash": "f8415cf922d7c5cfe72b516e4a9b55b9",
+    "semantic_hash": "f8415cf922d7c5cfe72b516e4a9b55b9"
+  }
+}

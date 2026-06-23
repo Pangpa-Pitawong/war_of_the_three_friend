@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>War of the Three Friend — สงครามสามก๊กเพื่อนซี้</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<div class="bg"></div>
+<div class="bg-pattern"></div>
+
+<!-- Tooltip -->
+<div id="tooltip" class="tooltip"></div>
+
+<!-- Notifications -->
+<div id="notif-container" class="notification"></div>
+
+<!-- Response / Peach modal (ตอบโต้ / ใกล้ตาย) -->
+<div id="modal-response" class="modal-overlay" style="z-index:200"></div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- SCREEN: MAIN MENU -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="screen-menu" class="screen active">
+  <div class="menu-logo">
+    <div class="zh-title">三國殺</div>
+    <h1>WAR OF THE THREE FRIEND</h1>
+    <div class="subtitle">สงครามสามก๊กเพื่อนซี้ · Online Multiplayer</div>
+  </div>
+  <div class="menu-container gold-frame" style="padding:24px 32px">
+    <button class="menu-btn primary" id="btn-play-online">⚔️ เล่นออนไลน์</button>
+    <button class="menu-btn" id="btn-create-room">🏠 สร้างห้อง</button>
+    <button class="menu-btn" id="btn-encyclopedia">📖 คลังข้อมูล</button>
+    <button class="menu-btn" onclick="window.location.href='#'" style="opacity:0.5;cursor:not-allowed">👥 เพื่อน (เร็วๆ นี้)</button>
+    <button class="menu-btn" onclick="window.location.href='#'" style="opacity:0.5;cursor:not-allowed">📜 ประวัติแมทช์ (เร็วๆ นี้)</button>
+  </div>
+  <div style="margin-top:20px;color:var(--text-dim);font-size:0.75rem;text-align:center">
+    Server: <span id="server-status" style="color:#27ae60">● ออนไลน์</span>
+    &nbsp;&nbsp;v1.0.0
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: CREATE ROOM -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="modal-create" class="modal-overlay">
+  <div class="modal gold-frame">
+    <h2>⚔️ สร้างห้องใหม่</h2>
+    <form id="form-create">
+      <div class="form-group">
+        <label>ชื่อผู้เล่น *</label>
+        <input id="create-username" maxlength="20" placeholder="ใส่ชื่อของคุณ" required>
+      </div>
+      <div class="form-group">
+        <label>ชื่อห้อง</label>
+        <input id="room-name" maxlength="30" placeholder="ห้องสามก๊ก">
+      </div>
+      <div class="form-group">
+        <label>รหัสผ่าน (ไม่บังคับ)</label>
+        <input id="room-pw" type="password" maxlength="20" placeholder="เว้นว่างถ้าไม่ต้องการ">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>จำนวนผู้เล่น</label>
+          <select id="player-limit">
+            <option value="2">2 คน</option>
+            <option value="3">3 คน</option>
+            <option value="4" selected>4 คน</option>
+            <option value="5">5 คน</option>
+            <option value="6">6 คน</option>
+            <option value="7">7 คน</option>
+            <option value="8">8 คน</option>
+            <option value="10">10 คน</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>ตัวจับเวลา</label>
+          <select id="turn-timer">
+            <option value="30">30 วินาที</option>
+            <option value="60" selected>60 วินาที</option>
+            <option value="90">90 วินาที</option>
+            <option value="120">120 วินาที</option>
+            <option value="0">ไม่มีเวลา</option>
+          </select>
+        </div>
+      </div>
+      <div class="toggle-row">
+        <div><div class="toggle-label">อนุญาตผู้ชม</div><div class="toggle-desc">ให้คนอื่นดูเกมได้</div></div>
+        <label class="toggle-switch"><input type="checkbox" id="allow-spectators" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div><div class="toggle-label">ห้องส่วนตัว</div><div class="toggle-desc">ไม่แสดงในรายการสาธารณะ</div></div>
+        <label class="toggle-switch"><input type="checkbox" id="private-room"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div><div class="toggle-label">แชทข้อความ</div><div class="toggle-desc">เปิดใช้แชทในห้อง</div></div>
+        <label class="toggle-switch"><input type="checkbox" id="text-chat" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-cancel" data-close-modal="modal-create">ยกเลิก</button>
+        <button type="submit" class="btn btn-confirm">🏠 สร้างห้อง</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: JOIN ROOM -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="modal-join" class="modal-overlay">
+  <div class="modal gold-frame" style="width:560px">
+    <h2>🚪 เข้าร่วมห้อง</h2>
+    <form id="form-join">
+      <div class="form-group">
+        <label>ชื่อผู้เล่น *</label>
+        <input id="join-username" maxlength="20" placeholder="ใส่ชื่อของคุณ" required>
+      </div>
+      <div class="form-group">
+        <label>รหัสห้อง *</label>
+        <input id="join-code" maxlength="10" placeholder="WTK-XXXXXX" style="font-size:1.1rem;letter-spacing:3px;font-weight:700" required>
+      </div>
+      <div class="form-group">
+        <label>รหัสผ่าน (ถ้ามี)</label>
+        <input id="join-pw" type="password" maxlength="20" placeholder="ว่างถ้าไม่มีรหัสผ่าน">
+      </div>
+
+      <div style="margin-bottom:12px">
+        <div style="color:var(--text-dim);font-size:0.8rem;margin-bottom:8px;letter-spacing:1px">ห้องสาธารณะที่เปิดอยู่</div>
+        <div id="public-room-list" class="room-list"></div>
+      </div>
+
+      <div class="btn-row">
+        <button type="button" class="btn btn-cancel" data-close-modal="modal-join">ยกเลิก</button>
+        <button type="submit" class="btn btn-confirm">🚪 เข้าร่วม</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: ENCYCLOPEDIA -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="modal-encyclopedia" class="modal-overlay">
+  <div class="modal gold-frame" style="width:700px;max-height:88vh">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0">📖 คลังข้อมูล</h2>
+      <button class="btn btn-cancel" data-close-modal="modal-encyclopedia" style="width:auto;padding:8px 16px">✕ ปิด</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px">
+      <button class="menu-btn encyc-tab active" data-encyc="chars" style="width:auto;padding:8px 16px">🧑‍⚔️ ตัวละคร</button>
+      <button class="menu-btn encyc-tab" data-encyc="cards" style="width:auto;padding:8px 16px">🃏 การ์ด</button>
+      <button class="menu-btn encyc-tab" data-encyc="roles" style="width:auto;padding:8px 16px">🎭 บทบาท</button>
+    </div>
+    <div id="encyc-content" style="overflow-y:auto;max-height:65vh"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- SCREEN: LOBBY -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="screen-lobby" class="screen" style="flex-direction:row;padding:20px;gap:16px;align-items:flex-start;justify-content:center;overflow-y:auto">
+  <div class="lobby-main">
+    <!-- Room header -->
+    <div class="gold-frame room-header">
+      <div>
+        <div class="room-title" id="lobby-room-name">กำลังโหลด...</div>
+        <div style="font-size:0.8rem;color:var(--text-dim);margin-top:4px">แชร์รหัสห้องให้เพื่อน</div>
+      </div>
+      <div class="room-code" id="lobby-room-code" title="คลิกเพื่อคัดลอก">WTK-??????</div>
+    </div>
+
+    <!-- Player grid -->
+    <div class="gold-frame" style="padding:0">
+      <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <span style="color:var(--gold);font-weight:700;letter-spacing:2px">ผู้เล่น</span>
+        <span id="player-count" style="color:var(--text-dim);font-size:0.85rem"></span>
+      </div>
+      <div class="player-grid" id="player-grid"></div>
+    </div>
+
+    <!-- Actions -->
+    <div class="lobby-actions">
+      <button class="btn btn-cancel" id="btn-leave-lobby">← ออก</button>
+      <button class="btn btn-confirm" id="btn-select-char" style="flex:1">🧑‍⚔️ เลือกตัวละคร</button>
+      <button class="btn btn-confirm" id="btn-ready" style="flex:1">✓ พร้อมแล้ว</button>
+      <button class="btn btn-confirm" id="btn-start" style="background:linear-gradient(135deg,#27ae60,#2ecc71);border-color:#27ae60;display:none">▶ เริ่มเกม</button>
+    </div>
+  </div>
+
+  <!-- Chat Panel -->
+  <div class="chat-panel gold-frame">
+    <h3>💬 แชทห้อง</h3>
+    <div class="chat-messages" id="chat-messages-lobby"></div>
+    <div class="chat-input-row">
+      <input id="chat-input-lobby" placeholder="พิมพ์ข้อความ..." maxlength="200">
+      <button class="chat-send" id="chat-send-lobby">ส่ง</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- SCREEN: CHARACTER SELECT -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="screen-charselect" class="screen" style="padding:16px;align-items:stretch">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h2 style="color:var(--gold);letter-spacing:3px">🧑‍⚔️ เลือกตัวละคร</h2>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-cancel" id="btn-back-charselect" style="width:auto;padding:8px 16px">← กลับ</button>
+      <button class="btn btn-confirm" id="btn-confirm-char" style="width:auto;padding:8px 16px">✓ ยืนยัน</button>
+    </div>
+  </div>
+  <div class="charselect-layout">
+    <!-- Left: Character Grid -->
+    <div class="char-list-panel gold-frame" style="padding:0">
+      <div class="char-tabs">
+        <button class="char-tab wei active" data-kingdom="WEI">⚔️ เว่ย</button>
+        <button class="char-tab shu" data-kingdom="SHU">🌿 สู่</button>
+        <button class="char-tab wu" data-kingdom="WU">🌊 อู๋</button>
+        <button class="char-tab qun" data-kingdom="QUN">👁️ ไม่สังกัด</button>
+      </div>
+      <div class="char-grid" id="char-grid"></div>
+    </div>
+
+    <!-- Right: Detail Panel -->
+    <div class="char-detail-panel">
+      <div class="char-preview gold-frame">
+        <img class="char-preview-img" id="preview-img" src="" alt="เลือกตัวละคร" onerror="this.style.display='none'">
+        <div class="char-preview-info">
+          <div class="char-preview-name" id="preview-name">เลือกตัวละคร</div>
+          <div class="char-preview-zh" id="preview-zh">คลิกที่ตัวละครด้านซ้าย</div>
+          <div class="char-preview-hp" id="preview-hp"></div>
+          <div class="char-lore" id="preview-lore">เลื่อนเมาส์ไปที่ตัวละครเพื่อดูรายละเอียดเป็นภาษาไทย</div>
+        </div>
+      </div>
+      <div class="gold-frame" style="padding:16px;flex:1;overflow-y:auto">
+        <div style="color:var(--gold);font-size:0.85rem;font-weight:700;letter-spacing:2px;margin-bottom:12px">ทักษะพิเศษ</div>
+        <div class="skill-list" id="skill-list">
+          <div style="color:var(--text-dim);font-size:0.85rem">เลือกตัวละครเพื่อดูทักษะ</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- SCREEN: GAME BOARD -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="screen-game" class="screen">
+  <div class="game-layout">
+    <!-- Main game area -->
+    <div class="game-center">
+      <!-- Players ring -->
+      <div class="players-ring" id="players-ring">
+        <!-- Board center -->
+        <div class="board-center">
+          <div class="turn-info">
+            <div class="turn-player" id="turn-player">—</div>
+            <div class="turn-phase" id="turn-phase">รอเริ่ม</div>
+          </div>
+          <div class="pile-group">
+            <div>
+              <div class="card-pile" title="กองไพ่">
+                <img src="/BackCard/Screenshot 2026-06-23 011011.png" alt="กองไพ่" onerror="this.style.background='#333'">
+                <div class="deck-count" id="deck-count">108</div>
+              </div>
+              <div class="card-pile-label">กองไพ่</div>
+            </div>
+            <div>
+              <div class="card-pile" title="กองทิ้ง">
+                <img id="discard-top" src="" alt="ทิ้ง" style="display:none">
+                <div style="font-size:1.5rem;opacity:0.3">♻</div>
+              </div>
+              <div class="card-pile-label">ทิ้งแล้ว</div>
+            </div>
+          </div>
+          <div class="timer-ring" id="timer-ring">
+            <span id="timer-display">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- My hand area -->
+      <div class="my-hand-area">
+        <div class="my-hand-label">ไพ่ในมือ</div>
+        <div class="hand-actions">
+          <button class="action-btn" id="btn-cancel-target" style="display:none;background:rgba(52,152,219,0.2);border-color:#3498db;color:#3498db">✕ ยกเลิก</button>
+          <button class="action-btn end-turn" id="btn-end-turn" style="display:none">⏭ จบตา</button>
+        </div>
+        <div id="my-hand" style="display:flex;gap:8px;align-items:flex-end;padding-bottom:8px;padding-top:30px"></div>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="game-sidebar">
+      <div class="sidebar-tabs">
+        <div class="sidebar-tab active" data-tab="log">บันทึก</div>
+        <div class="sidebar-tab" data-tab="chat">แชท</div>
+        <div class="sidebar-tab" data-tab="players">ผู้เล่น</div>
+      </div>
+      <div class="sidebar-content">
+        <!-- Combat Log -->
+        <div class="sidebar-section active" id="sidebar-log">
+          <div id="combat-log" style="display:flex;flex-direction:column;gap:2px"></div>
+        </div>
+        <!-- Chat -->
+        <div class="sidebar-section" id="sidebar-chat" style="display:flex;flex-direction:column;height:100%">
+          <div class="chat-messages" id="chat-messages-game" style="flex:1;min-height:200px"></div>
+          <div class="chat-input-row" style="padding:8px 0 0">
+            <input id="chat-input-game" placeholder="พิมพ์ข้อความ..." maxlength="200">
+            <button class="chat-send" id="chat-send-game">ส่ง</button>
+          </div>
+        </div>
+        <!-- Players list -->
+        <div class="sidebar-section" id="sidebar-players">
+          <div id="player-list-sidebar" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- SCREEN: WIN -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="screen-win" class="screen">
+  <div class="gold-frame win-content" style="max-width:500px">
+    <div style="font-size:4rem;margin-bottom:16px">🏆</div>
+    <div class="win-title" id="win-winner">ผู้ชนะ</div>
+    <div class="win-subtitle" id="win-msg">เกมจบแล้ว</div>
+    <button class="btn btn-confirm" id="btn-back-menu" style="width:200px;margin:0 auto">← กลับหน้าหลัก</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- Scripts -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/data.js"></script>
+<script src="/js/game.js"></script>
+</body>
+</html>

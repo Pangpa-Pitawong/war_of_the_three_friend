@@ -1,0 +1,15 @@
+# Render Blueprint — Deploy อัตโนมัติ
+# วิธีใช้: เชื่อม repo นี้กับ Render แล้วเลือก "Blueprint" จะตั้งค่าให้อัตโนมัติ
+services:
+  - type: web
+    name: war-of-the-three-friend
+    runtime: node
+    plan: free
+    region: singapore        # ใกล้ไทยที่สุด
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/rooms
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
