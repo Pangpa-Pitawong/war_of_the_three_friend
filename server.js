@@ -1441,7 +1441,12 @@ app.get('/api/rooms', (_, res) => {
 
 const PORT = process.env.PORT || 3000;
 // bind 0.0.0.0 เพื่อให้เข้าถึงได้จากภายนอก (คลาวด์/LAN)
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🎮 War of the Three Friend Server`);
-  console.log(`🌐 http://localhost:${PORT}\n`);
-});
+// รันเฉพาะเมื่อเรียกไฟล์นี้ตรงๆ — ถ้าถูก require (เช่น เทส) จะไม่เปิดพอร์ต
+if (require.main === module) {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n🎮 War of the Three Friend Server`);
+    console.log(`🌐 http://localhost:${PORT}\n`);
+  });
+}
+
+module.exports = { Room, Game, CARD_TEMPLATES, CHARACTERS, CHAR_PASSIVES, ACTIVE_SKILLS };

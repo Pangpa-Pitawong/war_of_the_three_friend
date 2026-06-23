@@ -11,3 +11,4 @@ Rule/
 # ไฟล์เครื่องมือ/แคช ไม่จำเป็นต่อแอป
 .claude/
 graphify-out/
+test_effects.js
