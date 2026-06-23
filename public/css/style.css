@@ -362,7 +362,7 @@ html, body {
 
 /* ─── Character Selection ─────────────────────────────────────────────── */
 #screen-charselect { z-index: 10; padding: 20px; }
-.charselect-layout { display: flex; gap: 20px; width: 100%; max-width: 1200px; height: calc(100vh - 80px); }
+.charselect-layout { display: flex; gap: 20px; width: 100%; max-width: 1580px; height: calc(100vh - 80px); }
 .char-list-panel { width: 680px; display: flex; flex-direction: column; }
 .char-tabs { display: flex; gap: 4px; padding: 12px 12px 0; }
 .char-tab {

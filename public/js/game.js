@@ -424,13 +424,17 @@ function renderDraft() {
 
   // เปิดเผยตัวที่จักรพรรดิเลือก
   const lordRevealEl = document.getElementById('draft-lord-reveal');
+  const lordPanel = document.getElementById('draft-lord-panel');
   if (d.lordPick) {
     lordRevealEl.style.display = '';
     const lc = window.CHAR_DATA[d.lordPick];
     document.getElementById('draft-lord-img').src = lc?.image || '';
     document.getElementById('draft-lord-name').textContent = lc?.nameTh || '';
+    fillLordPickPanel(d.lordPick);
+    lordPanel.style.display = '';
   } else {
     lordRevealEl.style.display = 'none';
+    lordPanel.style.display = 'none';
   }
 
   const grid = document.getElementById('draft-grid');
@@ -504,6 +508,24 @@ function fillDraftPreview(id) {
   document.getElementById('draft-preview-hp').innerHTML = `❤️ ${c.hp} HP <span>(แคว้น${kname})</span>`;
   document.getElementById('draft-preview-lore').textContent = c.lore;
   document.getElementById('draft-skill-list').innerHTML = c.skills.map(s => `
+    <div class="skill-item">
+      <div class="skill-name">【${s.name}】</div>
+      <div class="skill-en">${s.nameEn}</div>
+      <div class="skill-desc">${s.desc}</div>
+    </div>
+  `).join('');
+}
+
+function fillLordPickPanel(id) {
+  const c = window.CHAR_DATA[id];
+  if (!c) return;
+  const img = document.getElementById('draft-lordpick-img');
+  img.src = c.image; img.style.display = '';
+  document.getElementById('draft-lordpick-name').textContent = c.nameTh;
+  document.getElementById('draft-lordpick-zh').textContent = `${c.nameEn} · ${c.nameZh}`;
+  const kname = { WEI: 'เว่ย', SHU: 'สู่', WU: 'อู๋', QUN: 'ไม่สังกัด' }[c.kingdom];
+  document.getElementById('draft-lordpick-hp').innerHTML = `❤️ ${c.hp} HP <span>(แคว้น${kname})</span>`;
+  document.getElementById('draft-lordpick-skills').innerHTML = c.skills.map(s => `
     <div class="skill-item">
       <div class="skill-name">【${s.name}】</div>
       <div class="skill-en">${s.nameEn}</div>
