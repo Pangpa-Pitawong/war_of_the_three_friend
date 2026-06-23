@@ -12,6 +12,7 @@ let STATE = {
   currentScreen: 'menu',
   charFilter: 'WEI',
   selectedChar: null,
+  draftSelected: null,   // ตัวละครที่กำลังเลือกในขั้นตอนดราฟต์
 };
 
 // ─── Screen Manager ────────────────────────────────────────────────────
@@ -200,6 +201,15 @@ socket.on('joinedRoom', ({ playerId }) => {
 
 socket.on('roomUpdate', (room) => {
   STATE.room = room;
+  // เข้าสู่ขั้นตอนเลือกตัวละคร (สุ่มโรลแล้ว) → แสดงหน้าดราฟต์
+  if (room.state === 'selecting') {
+    if (STATE.currentScreen !== 'draft') {
+      STATE.draftSelected = null;
+      showScreen('draft');
+    }
+    renderDraft();
+    return;
+  }
   if (STATE.currentScreen === 'lobby') renderLobby();
   if (STATE.currentScreen === 'game') renderGame();
   if (STATE.currentScreen === 'charselect') renderCharSelect();
@@ -297,7 +307,7 @@ function renderLobby() {
         ${charImg}
         <div class="player-info">
           <div class="player-name">${p.username} ${hostBadge}</div>
-          <div class="player-meta">${char ? char.nameTh : 'ยังไม่เลือกตัวละคร'} ${kingdomBadge} ${dcBadge}</div>
+          <div class="player-meta">${char ? char.nameTh : 'เลือกตัวละครหลังเริ่มเกม'} ${kingdomBadge} ${dcBadge}</div>
         </div>
         <div class="player-status">
           <span class="ready-badge ${p.ready ? 'ready' : 'waiting'}">${p.ready ? '✓ พร้อม' : '⏳ รอ'}</span>
@@ -384,6 +394,116 @@ function selectChar(id) {
   STATE.selectedChar = id;
   socket.emit('selectCharacter', { characterId: id });
   renderCharSelect();
+}
+
+// ─── Draft Render (สุ่มโรล → เลือกตัวละคร · จักรพรรดิเลือกก่อน) ────────────────────
+const LORD_CHARS = ['caocao', 'liubei', 'sunquan'];
+
+function renderDraft() {
+  const room = STATE.room;
+  const d = room?.draft;
+  if (!d) return;
+  const me = room.players.find(p => p.id === STATE.playerId);
+  const myRole = me?.role;
+  const iAmLord = myRole === 'Lord';
+  const isLordStage = d.stage === 'lord';
+  const candidates = d.myCandidates;
+  const alreadyPicked = !!d.myPick;
+
+  // แบนเนอร์บทบาท
+  const roleData = window.ROLE_DATA[myRole];
+  const roleImg = document.getElementById('draft-role-img');
+  roleImg.src = roleData?.image || '';
+  roleImg.style.display = roleData ? '' : 'none';
+
+  // เปิดเผยตัวที่จักรพรรดิเลือก
+  const lordRevealEl = document.getElementById('draft-lord-reveal');
+  if (d.lordPick) {
+    lordRevealEl.style.display = '';
+    const lc = window.CHAR_DATA[d.lordPick];
+    document.getElementById('draft-lord-img').src = lc?.image || '';
+    document.getElementById('draft-lord-name').textContent = lc?.nameTh || '';
+  } else {
+    lordRevealEl.style.display = 'none';
+  }
+
+  const grid = document.getElementById('draft-grid');
+  const confirmBtn = document.getElementById('btn-confirm-draft');
+  const hint = document.getElementById('draft-grid-hint');
+
+  if (!candidates) {
+    grid.innerHTML = `<div style="color:var(--text-dim);padding:24px;grid-column:1/-1;text-align:center">${isLordStage ? '👑 รอจักรพรรดิเลือกตัวละคร...' : 'กำลังแจกการ์ดตัวละคร...'}</div>`;
+    confirmBtn.style.display = 'none';
+    hint.textContent = '';
+  } else if (alreadyPicked) {
+    STATE.draftSelected = d.myPick;
+    grid.innerHTML = '';
+    renderDraftCard(grid, d.myPick, true);
+    confirmBtn.style.display = 'none';
+    hint.textContent = '✓ คุณเลือกตัวละครแล้ว — กำลังรอผู้เล่นคนอื่น';
+  } else {
+    if (!candidates.includes(STATE.draftSelected)) STATE.draftSelected = candidates[0];
+    grid.innerHTML = '';
+    candidates.forEach(id => renderDraftCard(grid, id, false));
+    confirmBtn.style.display = '';
+    hint.textContent = iAmLord
+      ? 'การ์ดจักรพรรดิ 7 ใบ (มี 👑 3 ใบเอฟเฟคจักรพรรดิเสมอ) — เลือก 1 ใบ'
+      : `การ์ดตัวละครในมือคุณ ${candidates.length} ใบ — เลือก 1 ใบ`;
+  }
+
+  // หัวข้อ + สถานะ
+  let title, status;
+  if (iAmLord) {
+    title = '👑 จักรพรรดิ — เลือกตัวละคร';
+    status = (isLordStage && !alreadyPicked) ? 'คุณได้เลือกก่อน! เลือกจากการ์ด 7 ใบ' : 'รอผู้เล่นคนอื่นเลือก...';
+  } else {
+    title = `${roleData?.nameTh || 'ผู้เล่น'} — เลือกตัวละคร`;
+    if (isLordStage) status = `รอ ${d.lordName || 'จักรพรรดิ'} เลือกตัวละครก่อน...`;
+    else status = alreadyPicked ? 'รอผู้เล่นคนอื่น...' : 'ถึงตาคุณเลือกตัวละครแล้ว!';
+  }
+  if (d.waiting?.length) status += ` · กำลังรอ: ${d.waiting.join(', ')}`;
+  document.getElementById('draft-title').textContent = title;
+  document.getElementById('draft-status').textContent = status;
+
+  if (STATE.draftSelected) fillDraftPreview(STATE.draftSelected);
+}
+
+function renderDraftCard(grid, id, locked) {
+  const c = window.CHAR_DATA[id];
+  if (!c) return;
+  const sel = STATE.draftSelected === id;
+  const isLordChar = LORD_CHARS.includes(id);
+  const div = document.createElement('div');
+  div.className = `char-card ${sel ? 'selected' : ''}`;
+  div.innerHTML = `
+    <img src="${c.image}" alt="${c.nameTh}" loading="lazy" onerror="this.src='data:image/svg+xml,<svg/>'">
+    <div class="char-card-kingdom kingdom-${c.kingdom}">${c.kingdom[0]}</div>
+    <div class="char-card-hp">❤️${c.hp}</div>
+    <div class="char-card-name">${c.nameTh}</div>
+    ${isLordChar ? '<div style="position:absolute;top:4px;left:4px;background:var(--gold);color:#000;font-size:0.6rem;font-weight:700;padding:1px 5px;border-radius:8px;z-index:3">👑</div>' : ''}
+  `;
+  addTooltipHover(div, () => charTooltipHTML(id));
+  if (!locked) div.addEventListener('click', () => { STATE.draftSelected = id; renderDraft(); });
+  grid.appendChild(div);
+}
+
+function fillDraftPreview(id) {
+  const c = window.CHAR_DATA[id];
+  if (!c) return;
+  const img = document.getElementById('draft-preview-img');
+  img.src = c.image; img.style.display = '';
+  document.getElementById('draft-preview-name').textContent = c.nameTh;
+  document.getElementById('draft-preview-zh').textContent = `${c.nameEn} · ${c.nameZh}`;
+  const kname = { WEI: 'เว่ย', SHU: 'สู่', WU: 'อู๋', QUN: 'ไม่สังกัด' }[c.kingdom];
+  document.getElementById('draft-preview-hp').innerHTML = `❤️ ${c.hp} HP <span>(แคว้น${kname})</span>`;
+  document.getElementById('draft-preview-lore').textContent = c.lore;
+  document.getElementById('draft-skill-list').innerHTML = c.skills.map(s => `
+    <div class="skill-item">
+      <div class="skill-name">【${s.name}】</div>
+      <div class="skill-en">${s.nameEn}</div>
+      <div class="skill-desc">${s.desc}</div>
+    </div>
+  `).join('');
 }
 
 // ─── Game Board Render ─────────────────────────────────────────────────
@@ -480,10 +600,17 @@ function renderGame() {
     document.getElementById('turn-player').textContent = cur ? cur.username : '';
     document.getElementById('turn-phase').textContent = phaseNames[game.phase] || game.phase;
     document.getElementById('deck-count').textContent = game.deckSize;
+    const discardCountEl = document.getElementById('discard-count');
+    if (discardCountEl) discardCountEl.textContent = game.discardCount ?? 0;
+    const discardTopImg = document.getElementById('discard-top');
     if (game.discardTop) {
       const cd = window.CARD_DATA[game.discardTop.name];
-      if (cd) document.getElementById('discard-top').src = cd.image;
+      if (cd) { discardTopImg.src = cd.image; discardTopImg.style.display = ''; }
+    } else if (discardTopImg) {
+      discardTopImg.style.display = 'none';
     }
+    // อัปเดตหน้าต่างกองทิ้งถ้ากำลังเปิดดูอยู่
+    if (document.getElementById('modal-discard')?.classList.contains('active')) openDiscardModal();
     if (game.timer !== null) {
       document.getElementById('timer-display').textContent = game.timer;
     }
@@ -681,6 +808,30 @@ function openPeachModal(msg) {
   });
 }
 
+// ─── Discard Pile Viewer (กองทิ้ง) ───────────────────────────────────────────
+function openDiscardModal() {
+  const g = STATE.room?.game;
+  const list = (g?.discard) || [];
+  const cont = document.getElementById('discard-modal-list');
+  document.getElementById('discard-modal-count').textContent = `(${list.length} ใบ)`;
+  if (!list.length) {
+    cont.innerHTML = '<div style="color:var(--text-dim);padding:24px;grid-column:1/-1;text-align:center">กองทิ้งยังว่างเปล่า</div>';
+  } else {
+    // ล่าสุดอยู่บนสุด
+    cont.innerHTML = list.slice().reverse().map(c => {
+      const cd = window.CARD_DATA[c.name];
+      return `<div class="hand-card" data-card="${c.name}" style="width:100%;aspect-ratio:0.71;cursor:help">
+        <img src="${cd?.image || ''}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">
+        ${suitPip(c)}
+        <div class="hand-card-type type-${c.type}">${(cd?.nameTh || c.name).split('(')[0].trim()}</div>
+      </div>`;
+    }).join('');
+    cont.querySelectorAll('[data-card]').forEach(el =>
+      addTooltipHover(el, () => cardTooltipHTML(el.dataset.card)));
+  }
+  document.getElementById('modal-discard').classList.add('active');
+}
+
 // ─── Chat ────────────────────────────────────────────────────────────────
 function addChatMessage(from, message, isSystem) {
   const selectors = ['#chat-messages-lobby', '#chat-messages-game'];
@@ -804,15 +955,18 @@ document.getElementById('btn-ready').addEventListener('click', () => {
   socket.emit('setReady', { ready: !me?.ready });
 });
 
-document.getElementById('btn-select-char').addEventListener('click', () => {
-  STATE.selectedChar = STATE.room?.players.find(p => p.id === STATE.playerId)?.character || null;
-  renderCharSelect();
-  showScreen('charselect');
-});
-
 document.getElementById('btn-start')?.addEventListener('click', () => {
   socket.emit('startGame');
 });
+
+// ─── Draft: ยืนยันเลือกตัวละคร ─────────────────────────────────────────────
+document.getElementById('btn-confirm-draft')?.addEventListener('click', () => {
+  if (!STATE.draftSelected) { notify('เลือกตัวละครก่อน', 'error'); return; }
+  socket.emit('selectCharacter', { characterId: STATE.draftSelected });
+});
+
+// ─── เปิดดูกองทิ้ง ─────────────────────────────────────────────────────────
+document.getElementById('discard-pile')?.addEventListener('click', openDiscardModal);
 
 document.getElementById('btn-leave-lobby').addEventListener('click', () => {
   socket.emit('leaveRoom');

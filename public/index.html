@@ -183,7 +183,6 @@
     <!-- Actions -->
     <div class="lobby-actions">
       <button class="btn btn-cancel" id="btn-leave-lobby">← ออก</button>
-      <button class="btn btn-confirm" id="btn-select-char" style="flex:1">🧑‍⚔️ เลือกตัวละคร</button>
       <button class="btn btn-confirm" id="btn-ready" style="flex:1">✓ พร้อมแล้ว</button>
       <button class="btn btn-confirm" id="btn-start" style="background:linear-gradient(135deg,#27ae60,#2ecc71);border-color:#27ae60;display:none">▶ เริ่มเกม</button>
     </div>
@@ -245,6 +244,61 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- SCREEN: DRAFT (สุ่มโรล → เลือกตัวละคร · จักรพรรดิเลือกก่อน) -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="screen-draft" class="screen" style="padding:16px;align-items:stretch">
+  <div class="gold-frame" id="draft-banner" style="padding:14px 20px;margin-bottom:12px;display:flex;align-items:center;gap:16px">
+    <img id="draft-role-img" src="" alt="บทบาท" style="width:54px;height:76px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" onerror="this.style.display='none'">
+    <div style="flex:1">
+      <div style="color:var(--gold);font-weight:700;letter-spacing:2px;font-size:1.05rem" id="draft-title">เลือกตัวละคร</div>
+      <div style="color:var(--text-dim);font-size:0.85rem;margin-top:4px" id="draft-status">—</div>
+    </div>
+    <div id="draft-lord-reveal" style="display:none;text-align:center">
+      <div style="color:var(--text-dim);font-size:0.7rem;margin-bottom:4px">👑 จักรพรรดิเลือก</div>
+      <img id="draft-lord-img" src="" style="width:44px;height:62px;object-fit:cover;border-radius:5px;border:1px solid var(--gold)" onerror="this.style.display='none'">
+      <div id="draft-lord-name" style="color:var(--gold);font-size:0.72rem;margin-top:2px"></div>
+    </div>
+  </div>
+  <div class="charselect-layout">
+    <div class="char-list-panel gold-frame" style="padding:14px">
+      <div style="color:var(--text-dim);font-size:0.8rem;margin-bottom:10px" id="draft-grid-hint">การ์ดตัวละครในมือคุณ — คลิกเพื่อเลือก</div>
+      <div class="char-grid" id="draft-grid" style="grid-template-columns:repeat(auto-fill,minmax(96px,1fr))"></div>
+    </div>
+    <div class="char-detail-panel">
+      <div class="char-preview gold-frame">
+        <img class="char-preview-img" id="draft-preview-img" src="" alt="" onerror="this.style.display='none'">
+        <div class="char-preview-info">
+          <div class="char-preview-name" id="draft-preview-name">—</div>
+          <div class="char-preview-zh" id="draft-preview-zh"></div>
+          <div class="char-preview-hp" id="draft-preview-hp"></div>
+          <div class="char-lore" id="draft-preview-lore"></div>
+        </div>
+      </div>
+      <div class="gold-frame" style="padding:16px;flex:1;overflow-y:auto">
+        <div style="color:var(--gold);font-size:0.85rem;font-weight:700;letter-spacing:2px;margin-bottom:12px">ทักษะพิเศษ</div>
+        <div class="skill-list" id="draft-skill-list"></div>
+      </div>
+    </div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn btn-confirm" id="btn-confirm-draft" style="width:auto;padding:10px 28px">✓ ยืนยันเลือกตัวละคร</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: DISCARD PILE (ดูกองทิ้งทั้งหมด) -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="modal-discard" class="modal-overlay">
+  <div class="modal gold-frame" style="width:660px;max-height:82vh">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h2 style="margin:0">♻️ กองทิ้ง <span id="discard-modal-count" style="color:var(--text-dim);font-size:0.9rem"></span></h2>
+      <button class="btn btn-cancel" data-close-modal="modal-discard" style="width:auto;padding:8px 16px">✕ ปิด</button>
+    </div>
+    <div id="discard-modal-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px;overflow-y:auto;max-height:66vh"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
 <!-- SCREEN: GAME BOARD -->
 <!-- ══════════════════════════════════════════════════════════════════════ -->
 <div id="screen-game" class="screen">
@@ -268,11 +322,12 @@
               <div class="card-pile-label">กองไพ่</div>
             </div>
             <div>
-              <div class="card-pile" title="กองทิ้ง">
+              <div class="card-pile" id="discard-pile" title="คลิกเพื่อดูกองทิ้งทั้งหมด" style="cursor:pointer">
                 <img id="discard-top" src="" alt="ทิ้ง" style="display:none">
                 <div style="font-size:1.5rem;opacity:0.3">♻</div>
+                <div class="deck-count" id="discard-count">0</div>
               </div>
-              <div class="card-pile-label">ทิ้งแล้ว</div>
+              <div class="card-pile-label">ทิ้งแล้ว 🔍</div>
             </div>
           </div>
           <div class="timer-ring" id="timer-ring">

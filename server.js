@@ -147,6 +147,9 @@ const CHARACTERS = [
   { id: 'panfeng',   name: 'Pan Feng',     kingdom: 'QUN', hp: 4, image: '/GeneralCard/QUH/Pan Feng.png' },
 ];
 
+// ตัวละครที่มี "เอฟเฟคจักรพรรดิ" (เจ้าผู้ครองแคว้น) — ฟิกให้อยู่ในมือจักรพรรดิทุกรอบ
+const LORD_CHARACTERS = ['caocao', 'liubei', 'sunquan'];
+
 // ─── Roles by player count (ตรงตามตารางในคู่มือ — สามก๊กฉบับมาตรฐาน) ──────────────
 // คอลัมน์: จักรพรรดิ(Lord) / ภักดี(Loyalist) / กบฎ(Rebel) / ทรยศ(Spy)
 //  4 คน: 1 / 1 / 1 / 1
@@ -186,6 +189,7 @@ class Room {
     this.spectators = [];
     this.state = 'lobby';   // lobby | selecting | playing | ended
     this.game = null;
+    this.draft = null;      // ขั้นตอนสุ่มโรล + เลือกตัวละคร (ดู startDraft)
     this.createdAt = Date.now();
   }
 
@@ -209,17 +213,28 @@ class Room {
   publicState(forPlayerId) {
     const me = this.findPlayer(forPlayerId);
     const g = this.game;
+    const d = this.draft;
+    const lord = this.players.find(p => p.role === 'Lord');
+    // ระหว่างเลือกตัวละคร: เปิดเผยเฉพาะตัวที่จักรพรรดิเลือกแล้ว + ตัวของเราเอง
+    const revealChar = (p) => {
+      if (this.state === 'playing' || this.state === 'ended') return p.character;
+      if (p.id === forPlayerId) return p.character;
+      if (this.state === 'selecting' && d && d.revealed.includes(p.id)) return p.character;
+      return null;
+    };
     return {
       code: this.code,
       hostId: this.hostId,
       settings: this.settings,
       state: this.state,
-      players: this.players.map(p => ({
+      players: this.players.map(p => {
+        const shownChar = revealChar(p);
+        return {
         id: p.id,
         username: p.username,
         ready: p.ready,
-        character: p.character,
-        kingdom: p.character ? CHARACTERS.find(c => c.id === p.character)?.kingdom : null,
+        character: shownChar,
+        kingdom: shownChar ? CHARACTERS.find(c => c.id === shownChar)?.kingdom : null,
         hp: p.hp,
         maxHp: p.maxHp,
         handCount: p.hand.length,
@@ -232,15 +247,33 @@ class Room {
         distance: g && me && me.hp > 0 && p.hp > 0 && p.id !== forPlayerId ? g.distance(me, p) : null,
         inAttackRange: g && me && me.hp > 0 && p.hp > 0 && p.id !== forPlayerId ? g.inAttackRange(me, p) : false,
         role: p.id === forPlayerId || this.state === 'ended' ? p.role : (p.role === 'Lord' ? 'Lord' : '?'),
-      })),
+      };
+      }),
       spectators: this.spectators.length,
       myAttackRange: g && me ? g.attackRange(me) : 1,
+      // ── ขั้นตอนเลือกตัวละคร (สุ่มโรลแล้ว จักรพรรดิเลือกก่อน) ──
+      draft: this.state === 'selecting' && d ? {
+        stage: d.stage,                              // 'lord' | 'others'
+        myCandidates: d.candidates[forPlayerId] || null,  // การ์ดตัวละครในมือเรา
+        myPick: d.picks[forPlayerId] || null,        // ตัวที่เราเลือกแล้ว
+        lordId: lord ? lord.id : null,
+        lordName: lord ? lord.username : null,
+        lordPick: lord && d.revealed.includes(lord.id) ? d.picks[lord.id] : null,
+        // ผู้เล่นที่ยังเลือกไม่เสร็จ (เพื่อแสดงสถานะ "กำลังรอ...")
+        waiting: (d.stage === 'lord'
+          ? (lord ? [lord] : [])
+          : this.players.filter(p => p.role !== 'Lord' && !d.picks[p.id])
+        ).map(p => p.username),
+      } : null,
       game: g ? {
         turn: g.turn,
         currentPlayer: g.currentPlayer,
         phase: g.phase,
         deckSize: g.deck.length,
         discardTop: g.discardPile.slice(-1)[0] || null,
+        discardCount: g.discardPile.length,
+        // กองทิ้งทั้งหมด — ให้ผู้เล่นเปิดดูได้ว่ามีใบไหนบ้าง (ล่าสุดอยู่ท้ายสุด)
+        discard: g.discardPile.map(c => ({ id: c.id, name: c.name, type: c.type, suit: c.suit, rank: c.rank })),
         log: g.log.slice(-30),
         timer: g.timer,
         // สถานะรอตอบโต้/ใกล้ตาย เฉพาะที่เกี่ยวข้องกับผู้เล่นนี้
@@ -248,6 +281,90 @@ class Room {
         dyingPlayerId: g.dyingPlayerId || null,
       } : null,
     };
+  }
+
+  // ─── สุ่มโรล + เริ่มขั้นตอนเลือกตัวละคร ──────────────────────────────────────────
+  // 1) สุ่มบทบาทตามจำนวนผู้เล่น  2) หมุนลำดับให้จักรพรรดิเป็นคนแรก
+  // 3) จักรพรรดิได้การ์ด 7 ใบ = 3 ใบฟิก (เอฟเฟคจักรพรรดิ) + สุ่ม 4 ใบ
+  startDraft() {
+    const n = this.players.length;
+    const roles = shuffleDeck([...(ROLE_SETS[n] || ROLE_SETS[2])]);
+    this.players.forEach((p, i) => {
+      p.role = roles[i];
+      p.character = null;
+    });
+    // หมุนลำดับที่นั่งให้จักรพรรดิอยู่หน้าสุด (เริ่มเล่นก่อน)
+    const lordIdx = this.players.findIndex(p => p.role === 'Lord');
+    if (lordIdx > 0) {
+      this.players = this.players.slice(lordIdx).concat(this.players.slice(0, lordIdx));
+    }
+    const lord = this.players[0];
+
+    // กองการ์ดตัวละคร = ทุกตัวยกเว้น 3 ใบฟิกของจักรพรรดิ แล้วสับ
+    const pool = shuffleDeck(CHARACTERS.map(c => c.id).filter(id => !LORD_CHARACTERS.includes(id)));
+    // มือจักรพรรดิ: 3 ใบฟิก + สุ่มอีก 4 ใบจากกอง
+    const lordCandidates = shuffleDeck([...LORD_CHARACTERS, ...pool.splice(0, 4)]);
+
+    this.draft = {
+      stage: 'lord',
+      pool,                       // การ์ดตัวละครที่เหลือในกอง
+      candidates: { [lord.id]: lordCandidates },
+      picks: {},                  // playerId -> charId
+      revealed: [],               // ผู้เล่นที่เปิดเผยตัวละครแล้ว (จักรพรรดิ)
+    };
+    this.state = 'selecting';
+  }
+
+  // จักรพรรดิ / ผู้เล่นเลือกตัวละครจากการ์ดในมือ
+  draftPick(playerId, charId) {
+    const d = this.draft;
+    if (!d || this.state !== 'selecting') return { ok: false, msg: 'ยังไม่ถึงขั้นตอนเลือกตัวละคร' };
+    const player = this.findPlayer(playerId);
+    if (!player) return { ok: false, msg: 'ไม่พบผู้เล่น' };
+    if (d.picks[playerId]) return { ok: false, msg: 'คุณเลือกตัวละครไปแล้ว' };
+    const cands = d.candidates[playerId];
+    if (!cands) return { ok: false, msg: 'ยังไม่ถึงตาเลือกของคุณ' };
+    if (!cands.includes(charId)) return { ok: false, msg: 'ตัวละครนี้ไม่ได้อยู่ในมือคุณ' };
+
+    if (d.stage === 'lord') {
+      if (player.role !== 'Lord') return { ok: false, msg: 'รอจักรพรรดิเลือกก่อน' };
+      d.picks[playerId] = charId;
+      d.revealed.push(playerId);
+      // เอาการ์ดที่จักรพรรดิไม่เลือก (6 ใบ) กลับเข้ากองแล้วสับ
+      d.pool.push(...cands.filter(id => id !== charId));
+      d.pool = shuffleDeck(d.pool);
+      // แจกผู้เล่นที่เหลือคนละ 5 ใบ (ปรับลดถ้ากองไม่พอ)
+      const others = this.players.filter(p => p.role !== 'Lord');
+      const per = Math.min(5, Math.max(1, Math.floor(d.pool.length / Math.max(1, others.length))));
+      others.forEach(p => { d.candidates[p.id] = d.pool.splice(0, per); });
+      d.stage = 'others';
+      if (others.length === 0) this.finishDraft();
+      return { ok: true };
+    }
+
+    // stage 'others' — ทุกคนเลือกพร้อมกัน คนละ 1 ใบ
+    d.picks[playerId] = charId;
+    const others = this.players.filter(p => p.role !== 'Lord');
+    if (others.every(p => d.picks[p.id])) this.finishDraft();
+    return { ok: true };
+  }
+
+  // ทุกคนเลือกครบ — กำหนดตัวละคร เก็บการ์ดที่เหลือกลับเข้ากอง แล้วเริ่มเกม
+  finishDraft() {
+    const d = this.draft;
+    this.players.forEach(p => { p.character = d.picks[p.id]; });
+    this.draft = null;
+    this.state = 'playing';
+    this.game = new Game(this);
+    this.game.start();
+    this.players.forEach(p => {
+      const sock = io.sockets.sockets.get(p.socketId);
+      if (sock) sock.emit('gameStarted', this.publicState(p.id));
+    });
+    this.spectators.forEach(sid => {
+      const sock = io.sockets.sockets.get(sid);
+      if (sock) sock.emit('gameStarted', this.publicState(null));
+    });
   }
 }
 
@@ -268,19 +385,12 @@ class Game {
   start() {
     const players = this.room.players;
     const n = players.length;
-    const roles = shuffleDeck([...ROLE_SETS[n] || ROLE_SETS[2]]);
-    const chars = shuffleDeck([...CHARACTERS]);
 
-    // จักรพรรดิต้องเล่นก่อน — จัดให้อยู่ตำแหน่งแรก
-    const lordRoleIdx = roles.indexOf('Lord');
-    if (lordRoleIdx > 0) { [roles[0], roles[lordRoleIdx]] = [roles[lordRoleIdx], roles[0]]; }
-
-    players.forEach((p, i) => {
-      p.role = roles[i];
-      const char = chars[i];
-      p.character = char.id;
+    // บทบาท+ตัวละคร ถูกกำหนดในขั้นตอนเลือกตัวละคร (startDraft) แล้ว
+    players.forEach((p) => {
+      const char = CHARACTERS.find(c => c.id === p.character);
       // จักรพรรดิได้พลังชีวิตเพิ่ม 1 หน่วย ยกเว้นเล่น 2 คน (ตามคู่มือ)
-      p.maxHp = char.hp + (p.role === 'Lord' && n > 2 ? 1 : 0);
+      p.maxHp = (char?.hp || 4) + (p.role === 'Lord' && n > 2 ? 1 : 0);
       p.hp = p.maxHp;
       p.hand = this.drawCards(4);  // แจกการ์ดเริ่มต้น คนละ 4 ใบ
       p.equipment = { weapon: null, armor: null, atkMount: null, defMount: null };
@@ -343,9 +453,10 @@ class Game {
     const cards = [];
     for (let i = 0; i < count; i++) {
       if (this.deck.length === 0) {
+        if (this.discardPile.length === 0) break;
         this.deck = shuffleDeck([...this.discardPile]);
         this.discardPile = [];
-        if (this.deck.length === 0) break;
+        this.addLog('ระบบ', `♻️ กองไพ่หมด — สับกองทิ้ง ${this.deck.length} ใบกลับเข้ากองเล่น`);
       }
       cards.push(this.deck.pop());
     }
@@ -949,14 +1060,11 @@ io.on('connection', (socket) => {
     const info = sockets.get(socket.id);
     if (!info) return;
     const room = rooms.get(info.roomCode);
-    if (!room || room.state !== 'lobby') return;
-    const player = room.findPlayer(info.playerId);
-    if (!player) return;
-    // Check not taken
-    const taken = room.players.some(p => p.id !== info.playerId && p.character === characterId);
-    if (taken) return socket.emit('error', 'ตัวละครนี้ถูกเลือกแล้ว');
-    player.character = characterId;
-    broadcastRoom(room);
+    if (!room || room.state !== 'selecting') return;
+    const result = room.draftPick(info.playerId, characterId);
+    if (!result.ok) return socket.emit('error', result.msg);
+    // ถ้าเลือกครบแล้ว finishDraft จะ emit gameStarted ให้เอง
+    if (room.state === 'selecting') broadcastRoom(room);
   });
 
   socket.on('startGame', () => {
@@ -965,27 +1073,13 @@ io.on('connection', (socket) => {
     const room = rooms.get(info.roomCode);
     if (!room) return;
     if (room.hostId !== info.playerId) return socket.emit('error', 'เฉพาะ Host เท่านั้น');
+    if (room.state !== 'lobby') return socket.emit('error', 'เกมเริ่มไปแล้ว');
     if (room.players.length < 2) return socket.emit('error', 'ต้องมีผู้เล่นอย่างน้อย 2 คน');
     if (!room.players.every(p => p.ready)) return socket.emit('error', 'ผู้เล่นบางคนยังไม่พร้อม');
 
-    // Assign random character to players who didn't pick
-    const available = CHARACTERS.filter(c => !room.players.some(p => p.character === c.id));
-    room.players.forEach(p => {
-      if (!p.character) {
-        const pick = available.splice(Math.floor(Math.random() * available.length), 1)[0];
-        if (pick) p.character = pick.id;
-      }
-    });
-
-    room.state = 'playing';
-    room.game = new Game(room);
-    room.game.start();
-
-    // Send personalized state to each player
-    room.players.forEach(p => {
-      const sock = io.sockets.sockets.get(p.socketId);
-      if (sock) sock.emit('gameStarted', room.publicState(p.id));
-    });
+    // สุ่มโรลก่อน แล้วเข้าสู่ขั้นตอนเลือกตัวละคร (จักรพรรดิเลือกก่อน)
+    room.startDraft();
+    broadcastRoom(room);
   });
 
   socket.on('playCard', ({ cardId, targetId }) => {
