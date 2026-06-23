@@ -164,8 +164,21 @@ const ACTIVE_SKILLS = {
 
 // การ์ดที่ใช้ "ตอบโต้" เท่านั้น — ห้ามเล่นเชิงรุกในเฟสเล่นการ์ด
 const RESPONSE_ONLY_CARDS = ['Dodge', 'Negation'];
-// การ์ดกลหน่วงเวลา (ต้องมีเฟสตัดสิน) — ฉบับนี้ยังไม่รองรับการเล่น
+// การ์ดกลหน่วงเวลา (ต้องมีเฟสตัดสิน) — ยังไม่รองรับการเล่น
 const UNSUPPORTED_PLAY_CARDS = ['Lightning', 'Overindulgence'];
+
+// ─── ทักษะ Passive ของตัวละคร (ตรวจที่เซิร์ฟเวอร์) ──────────────────────────────────
+const CHAR_PASSIVES = {
+  guanyu:   { redAsAttack: true },          // Wu Sheng (武圣): ไพ่แดงใช้เป็นโจมตีได้
+  zhaoyun:  { attackAsDodge: true,          // Long Dan (龙胆): โจมตีใช้เป็นหลบได้
+               dodgeAsAttack: true },        //                   หลบใช้เป็นโจมตีได้
+  zhangfei: { unlimitedAttacks: true },     // Pao Xiao (咆哮): โจมตีได้ไม่จำกัด
+  zhenji:   { blackAsDodge: true },         // Qing Guo (倾国): ไพ่ดำใช้เป็นหลบได้
+  machao:   { distanceMinus1: true },       // Ma Shu (马术): ระยะ -1 จากตนเองถึงคนอื่น
+  lvbu:     { needsTwoDodge: true },        // Wu Shuang (无双): เป้าต้องหลบ 2 ใบ
+  luxun:    { immuneToSteal: true,          // Qian Xun (谦逊): ขโมย/เบี่ยงเบนไม่ได้
+               immuneToOverindulgence: true },
+};
 
 // ─── Roles by player count (ตรงตามตารางในคู่มือ — สามก๊กฉบับมาตรฐาน) ──────────────
 // คอลัมน์: จักรพรรดิ(Lord) / ภักดี(Loyalist) / กบฎ(Rebel) / ทรยศ(Spy)
@@ -461,10 +474,10 @@ class Game {
     const fromIdx = this.room.players.indexOf(from);
     const toIdx = this.room.players.indexOf(to);
     let d = this.seatDistance(fromIdx, toIdx);
-    // ม้าโจมตี (-1) ของผู้โจมตี ทำให้เข้าใกล้เป้าหมายมากขึ้น
     if (from.equipment?.atkMount) d -= 1;
-    // ม้าป้องกัน (+1) ของเป้าหมาย ทำให้ไกลขึ้น
     if (to.equipment?.defMount) d += 1;
+    // Ma Chao (Ma Shu): ระยะจากตัวเองไปทุกคนลด 1
+    if (CHAR_PASSIVES[from.character]?.distanceMinus1) d -= 1;
     return Math.max(1, d);
   }
 
@@ -567,6 +580,7 @@ class Game {
     const players = this.room.players;
     const cur = players[this.currentPlayer];
     cur.attacksThisTurn = 0;
+    cur.wined = false;
     cur.skillUsed = {};   // รีเซ็ตการใช้ทักษะ (แบบครั้งเดียวต่อตา) ของผู้เล่นคนนี้
     this.turn++;
 
@@ -635,7 +649,9 @@ class Game {
     const card = cur.hand[cardIdx];
 
     // ── ตรวจเงื่อนไขการเล่นการ์ด ──
-    if (RESPONSE_ONLY_CARDS.includes(card.name))
+    // Guan Yu passive: red cards bypass response-only restriction (will be treated as Attack)
+    const isGuanyuRedPlay = CHAR_PASSIVES[cur.character]?.redAsAttack && card.color === 'red' && !!targetId;
+    if (RESPONSE_ONLY_CARDS.includes(card.name) && !isGuanyuRedPlay)
       return { ok: false, msg: `การ์ด${card.name} ใช้สำหรับตอบโต้เท่านั้น เล่นเชิงรุกไม่ได้` };
     if (UNSUPPORTED_PLAY_CARDS.includes(card.name))
       return { ok: false, msg: `การ์ด${card.name} เป็นการ์ดหน่วงเวลา (ต้องมีเฟสตัดสิน) — ฉบับนี้ยังไม่รองรับ` };
@@ -655,22 +671,37 @@ class Game {
   }
 
   applyCard(from, card, target) {
+    // ─── Guan Yu (关羽) passive: any red card = Attack ────────────────────────────
+    if (CHAR_PASSIVES[from.character]?.redAsAttack && card.color === 'red' && target && card.name !== 'Attack') {
+      if (target.id === from.id) return { ok: false, msg: 'โจมตีตัวเองไม่ได้' };
+      if (target.hp <= 0) return { ok: false, msg: 'เป้าหมายถูกกำจัดแล้ว' };
+      const _hasCrossbow = from.equipment?.weapon?.name === 'Zhuge Crossbow';
+      const _unlimited = _hasCrossbow || !!CHAR_PASSIVES[from.character]?.unlimitedAttacks;
+      if (from.attacksThisTurn >= 1 && !_unlimited) return { ok: false, msg: 'โจมตีได้เพียง 1 ครั้งต่อตา' };
+      if (!this.inAttackRange(from, target)) return { ok: false, msg: `เป้าหมายอยู่นอกระยะโจมตี` };
+      from.attacksThisTurn++;
+      const _dmg = from.wined ? 2 : 1; from.wined = false;
+      this.addLog(from.username, `⚔️ [กวนอู] ${card.name}(♥♦) → โจมตี ${target.username}${_dmg > 1 ? ' 🍶+1' : ''}`);
+      this.requestResponse('dodge', target, from, 'Attack', { damage: _dmg, attackCardColor: card.color, dodgesNeeded: 1 });
+      return { ok: true, logMsg: null };
+    }
+
     switch (card.name) {
       case 'Attack': {
         if (!target) return { ok: false, msg: 'ต้องเลือกเป้าหมาย' };
         if (target.id === from.id) return { ok: false, msg: 'โจมตีตัวเองไม่ได้' };
         if (target.hp <= 0) return { ok: false, msg: 'เป้าหมายถูกกำจัดแล้ว' };
-        // โจมตีได้ 1 ครั้งต่อตา ยกเว้นถือไม้ซานกุนหนู (Zhuge Crossbow)
         const hasCrossbow = from.equipment?.weapon?.name === 'Zhuge Crossbow';
-        if (from.attacksThisTurn >= 1 && !hasCrossbow)
-          return { ok: false, msg: 'โจมตีได้เพียง 1 ครั้งต่อตา (ต้องมีไม้ซานกุนหนู)' };
-        // ตรวจระยะโจมตี
+        const hasUnlimitedAttacks = hasCrossbow || !!CHAR_PASSIVES[from.character]?.unlimitedAttacks;
+        if (from.attacksThisTurn >= 1 && !hasUnlimitedAttacks)
+          return { ok: false, msg: 'โจมตีได้เพียง 1 ครั้งต่อตา' };
         if (!this.inAttackRange(from, target))
           return { ok: false, msg: `เป้าหมายอยู่นอกระยะโจมตี (ระยะ ${this.distance(from,target)} > ${this.attackRange(from)})` };
         from.attacksThisTurn++;
-        this.addLog(from.username, `⚔️ โจมตี ${target.username}`);
-        // เป้าหมายต้องตอบโต้ด้วยการ์ดหลบหลีก
-        this.requestResponse('dodge', target, from, 'Attack', { damage: 1 });
+        const dmg = from.wined ? 2 : 1; from.wined = false;
+        const dodgesNeeded = CHAR_PASSIVES[from.character]?.needsTwoDodge ? 2 : 1;
+        this.addLog(from.username, `⚔️ โจมตี ${target.username}${dmg > 1 ? ' 🍶+1' : ''}${dodgesNeeded > 1 ? ' (ต้องหลบ 2 ครั้ง!)' : ''}`);
+        this.requestResponse('dodge', target, from, 'Attack', { damage: dmg, attackCardColor: card.color, dodgesNeeded });
         return { ok: true, logMsg: null };
       }
 
@@ -681,7 +712,9 @@ class Game {
       }
 
       case 'Wine': {
-        return { ok: true, logMsg: `🍶 ดื่มสุรา — การโจมตีครั้งถัดไปแรงขึ้น` };
+        if (from.wined) return { ok: false, msg: 'ดื่มสุราไปแล้วในเทิร์นนี้' };
+        from.wined = true;
+        return { ok: true, logMsg: `🍶 ดื่มสุรา — การโจมตีครั้งถัดไปแรงขึ้น (+1 ความเสียหาย)` };
       }
 
       case 'Duel': {
@@ -696,6 +729,8 @@ class Game {
       case 'Steal': {
         if (!target) return { ok: false, msg: 'ต้องเลือกเป้าหมาย' };
         if (target.id === from.id) return { ok: false, msg: 'เลือกตัวเองไม่ได้' };
+        if (CHAR_PASSIVES[target.character]?.immuneToSteal)
+          return { ok: false, msg: `${target.username} ไม่สามารถถูกขโมยได้ (ลู่ซุ่น: ศักดิ์ศรีแห่งน้ำ)` };
         if (this.distance(from, target) > 1) return { ok: false, msg: 'เป้าหมายต้องอยู่ในระยะ 1' };
         const loot = this.takeOneCard(target);
         if (!loot) return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
@@ -782,14 +817,8 @@ class Game {
   }
 
   // ─── ระบบตอบโต้ (หลบหลีก / โต้ดวล) ──────────────────────────────────────────
-  requestResponse(type, responder, source, cardName, payload) {
-    this.pending = {
-      type,                       // 'dodge' | 'duel'
-      responderId: responder.id,
-      sourceId: source.id,
-      cardName,
-      payload,
-    };
+  requestResponse(type, responder, source, cardName, payload = {}) {
+    this.pending = { type, responderId: responder.id, sourceId: source.id, cardName, payload };
     clearInterval(this.timerInterval);
     this.timer = 20;
     this.respTimer = setInterval(() => {
@@ -797,14 +826,45 @@ class Game {
       io.to(this.room.code).emit('timerTick', this.timer);
       if (this.timer <= 0) {
         clearInterval(this.respTimer);
-        this.resolveResponse(responder.id, null);  // ไม่ตอบโต้
+        this.resolveResponse(responder.id, null);
       }
     }, 1000);
+
+    // ── เช็คเกราะ passive ก่อนถามผู้เล่น ──
+    if (type === 'dodge') {
+      // Nio Shield (仁王盾): บล็อกการโจมตีสีดำอัตโนมัติ
+      if (responder.equipment?.armor?.name === 'Nio Shield' && payload.attackCardColor === 'black') {
+        this.addLog(responder.username, '🛡️ [ยันต์สวรรค์/仁王盾] บล็อกโจมตีสีดำอัตโนมัติ!');
+        return this.resolveResponse(responder.id, null, true);
+      }
+      // Eight Trigrams Formation (八卦阵): เปิดไพ่หน้าดาดฟ้า
+      if (responder.equipment?.armor?.name === 'Eight Trigrams Formation') {
+        const topCard = this.drawCards(1)[0];
+        if (topCard) {
+          this.discardPile.push(topCard);
+          if (topCard.color === 'red') {
+            this.addLog(responder.username, `🔮 [八卦阵] กลับ ${topCard.name}(แดง) — หลบอัตโนมัติ!`);
+            return this.resolveResponse(responder.id, null, true);
+          }
+          this.addLog(responder.username, `🔮 [八卦阵] กลับ ${topCard.name}(ดำ) — ต้องเล่นการ์ดหลบเอง`);
+        }
+      }
+    }
+
+    // บอก client ว่าการ์ดประเภทไหนอีกที่ใช้ตอบโต้ได้ (passive ตัวละคร)
+    const alsoAccept = [];
+    if (type === 'dodge') {
+      if (CHAR_PASSIVES[responder.character]?.attackAsDodge) alsoAccept.push('Attack');
+      if (CHAR_PASSIVES[responder.character]?.blackAsDodge) alsoAccept.push('_black');
+    } else if (type === 'duel') {
+      if (CHAR_PASSIVES[responder.character]?.dodgeAsAttack) alsoAccept.push('Dodge');
+    }
 
     const need = type === 'duel' ? 'Attack' : 'Dodge';
     const sock = io.sockets.sockets.get(responder.socketId);
     if (sock) sock.emit('awaitResponse', {
-      type, need, cardName,
+      type, need, cardName, alsoAccept,
+      dodgesNeeded: payload.dodgesNeeded || 1,
       from: source.username,
       msg: type === 'duel'
         ? `${source.username} ท้าดวลคุณ! เล่นการ์ดโจมตี หรือเสีย 1 พลังชีวิต`
@@ -826,7 +886,14 @@ class Game {
   nextGroupResponse() {
     if (!this.groupQueue || this.groupQueue.length === 0) {
       this.groupQueue = null;
-      this.broadcast();
+      this.groupSource = null;
+      this.groupCard = null;
+      this.groupPayload = null;
+      if (this.room.state !== 'ended') {
+        this.phase = 'play';
+        this.startTimer();
+        this.broadcast();
+      }
       return;
     }
     const vid = this.groupQueue.shift();
@@ -836,44 +903,74 @@ class Game {
     this.requestResponse(this.groupType, victim, source, this.groupCard, this.groupPayload);
   }
 
-  resolveResponse(responderId, cardId) {
+  resolveResponse(responderId, cardId, autoDefend = false) {
     if (!this.pending || this.pending.responderId !== responderId) return { ok: false, msg: 'ไม่มีการตอบโต้ที่รออยู่' };
     clearInterval(this.respTimer);
 
     const responder = this.room.players.find(p => p.id === responderId);
     const source = this.room.players.find(p => p.id === this.pending.sourceId);
     const { type, payload, cardName } = this.pending;
-    const need = type === 'duel' ? 'Attack' : 'Dodge';
+    const dodgesNeeded = payload.dodgesNeeded || 1;
 
-    let defended = false;
-    if (cardId) {
+    let defended = autoDefend;
+    if (!autoDefend && cardId) {
       const idx = responder.hand.findIndex(c => c.id === cardId);
-      if (idx >= 0 && responder.hand[idx].name === need) {
-        const used = responder.hand.splice(idx, 1)[0];
-        this.discardPile.push(used);
-        defended = true;
-        this.addLog(responder.username, type === 'duel' ? `⚔️ โต้ดวลด้วยการโจมตี` : `🛡️ หลบหลีกสำเร็จ`);
+      if (idx >= 0) {
+        const card = responder.hand[idx];
+        let cardCounts = false;
+        if (type === 'dodge') {
+          cardCounts = card.name === 'Dodge'
+            || (CHAR_PASSIVES[responder.character]?.attackAsDodge && card.name === 'Attack')
+            || (CHAR_PASSIVES[responder.character]?.blackAsDodge && card.color === 'black');
+        } else if (type === 'duel') {
+          cardCounts = card.name === 'Attack'
+            || (CHAR_PASSIVES[responder.character]?.dodgeAsAttack && card.name === 'Dodge');
+        }
+        if (cardCounts) {
+          const used = responder.hand.splice(idx, 1)[0];
+          this.discardPile.push(used);
+          defended = true;
+          this.addLog(responder.username, type === 'duel' ? `⚔️ โต้ดวล (${used.name})` : `🛡️ หลบหลีกสำเร็จ (${used.name})`);
+        }
       }
     }
 
     this.pending = null;
 
     if (type === 'duel') {
-      // ฉบับย่อ: ถ้าโต้ด้วยโจมตี ผู้ท้าเสียแทน; ถ้าไม่โต้ ผู้ถูกท้าเสีย
-      if (defended) this.dealDamage(source, payload.damage, responder);
-      else this.dealDamage(responder, payload.damage, source);
+      if (defended) {
+        // สลับตัว: source ต้องเล่นโจมตีตอบกลับ — โดยไม่จำกัดรอบ
+        this.addLog(source.username, `↩️ ${responder.username} โต้! ตอนนี้ ${source.username} ต้องโจมตี`);
+        this.requestResponse('duel', source, responder, 'Duel', { damage: payload.damage });
+        return { ok: true };
+      }
+      this.dealDamage(responder, payload.damage, source);
     } else {
       if (!defended) {
         this.addLog(responder.username, '💢 ไม่ได้หลบ — รับความเสียหาย');
+        // Kirin Bow (麒麟弓): เมื่อโจมตีโดน ทำลายม้าของเป้าหมาย
+        if (source?.equipment?.weapon?.name === 'Kirin Bow') {
+          const mountSlot = responder.equipment?.atkMount ? 'atkMount' : (responder.equipment?.defMount ? 'defMount' : null);
+          if (mountSlot) {
+            const mount = responder.equipment[mountSlot];
+            responder.equipment[mountSlot] = null;
+            this.discardPile.push(mount);
+            this.addLog(source.username, `🏹 [Kirin Bow] ทำลายม้าของ ${responder.username}: ${mount.name}`);
+          }
+        }
         this.dealDamage(responder, payload.damage, source);
+      } else if (dodgesNeeded > 1) {
+        // Lv Bu (吕布): ต้องหลบ 2 ครั้ง
+        this.addLog(responder.username, `🛡️ หลบ 1/${dodgesNeeded} — ต้องหลบอีก ${dodgesNeeded - 1} ครั้ง`);
+        this.requestResponse('dodge', responder, source, cardName, { ...payload, dodgesNeeded: dodgesNeeded - 1 });
+        return { ok: true };
       }
     }
 
-    // ถ้ายังอยู่ในคิวกระทบหลายคน ให้ถามคนถัดไป
+    // ดำเนินเกมต่อ
     if (this.groupQueue) {
       this.nextGroupResponse();
     } else if (this.room.state !== 'ended') {
-      // กลับสู่เฟสเล่นการ์ดของผู้เล่นปัจจุบัน
       this.phase = 'play';
       this.startTimer();
       this.broadcast();

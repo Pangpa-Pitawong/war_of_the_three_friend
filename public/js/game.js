@@ -260,9 +260,10 @@ socket.on('timerTick', (t) => {
 });
 
 // ─── ระบบตอบโต้ (หลบหลีก / โต้ดวล) ───────────────────────────────────────────
-socket.on('awaitResponse', ({ type, need, cardName, from, msg }) => {
-  STATE.responseNeed = need; // 'Dodge' | 'Attack'
-  openResponseModal(type, need, cardName, from, msg);
+socket.on('awaitResponse', ({ type, need, cardName, from, msg, alsoAccept, dodgesNeeded }) => {
+  STATE.responseNeed = need;
+  STATE.responseAlsoAccept = alsoAccept || [];
+  openResponseModal(type, need, cardName, from, msg, alsoAccept || [], dodgesNeeded || 1);
 });
 
 socket.on('askPeach', ({ msg }) => {
@@ -782,8 +783,9 @@ function isTargetable(card, p) {
   if (['Steal','Burning Bridges'].includes(card.name)) {
     return p.distance != null && p.distance <= 1;
   }
-  // โจมตี — ต้องอยู่ในระยะโจมตี
-  if (card.name === 'Attack') {
+  // โจมตี (หรือ กวนอู ใช้ไพ่แดงเป็นโจมตี) — ต้องอยู่ในระยะโจมตี
+  const me = STATE.room?.players.find(pl => pl.id === STATE.playerId);
+  if (card.name === 'Attack' || (me?.character === 'guanyu' && card.color === 'red')) {
     return !!p.inAttackRange;
   }
   // ท้าดวล / ยืมดาบ — ไม่จำกัดระยะ
@@ -796,10 +798,12 @@ const UNSUPPORTED_PLAY_CARDS = ['Lightning', 'Overindulgence'];
 
 // คืนข้อความปัญหาถ้าเล่นการ์ดนี้ตอนนี้ไม่ได้ (null = เล่นได้)
 function cardPlayIssue(card) {
-  if (RESPONSE_ONLY_CARDS.includes(card.name)) return 'การ์ดนี้ใช้ตอบโต้เท่านั้น เล่นเองไม่ได้';
+  const me = STATE.room?.players.find(p => p.id === STATE.playerId);
+  // Guan Yu: ไพ่แดงทุกใบเล่นเป็นโจมตีได้ (ข้ามการตรวจ response-only)
+  const isGuanyuRed = me?.character === 'guanyu' && card.color === 'red';
+  if (RESPONSE_ONLY_CARDS.includes(card.name) && !isGuanyuRed) return 'การ์ดนี้ใช้ตอบโต้เท่านั้น เล่นเองไม่ได้';
   if (UNSUPPORTED_PLAY_CARDS.includes(card.name)) return 'การ์ดหน่วงเวลา — ฉบับนี้ยังไม่รองรับการเล่น';
   if (card.name === 'Peach') {
-    const me = STATE.room?.players.find(p => p.id === STATE.playerId);
     if (me && me.hp >= me.maxHp) return 'พลังชีวิตเต็มแล้ว ใช้เพอชไม่ได้';
   }
   return null;
@@ -861,11 +865,13 @@ function onCardClick(card) {
   }
 
   STATE.selectedCard = card;
-  const needsTarget = ['Attack','Steal','Burning Bridges','Borrowed Sword','Duel'].includes(card.name);
+  const me2 = players.find(p => p.id === STATE.playerId);
+  const isGuanyuRedCard = me2?.character === 'guanyu' && card.color === 'red' && card.name !== 'Attack';
+  const needsTarget = ['Attack','Steal','Burning Bridges','Borrowed Sword','Duel'].includes(card.name) || isGuanyuRedCard;
 
   if (needsTarget) {
     STATE.selectingTarget = true;
-    notify('เลือกเป้าหมาย...', 'info', 2000);
+    notify(isGuanyuRedCard ? `[กวนอู] เลือกเป้าหมายโจมตี (${card.name})` : 'เลือกเป้าหมาย...', 'info', 2000);
     renderGame();
   } else {
     // Play immediately (AoE or self-target)
@@ -885,16 +891,31 @@ function confirmPlayCard(targetId) {
 }
 
 // ─── Response Modal (ตอบโต้) ─────────────────────────────────────────────────
-function openResponseModal(type, need, cardName, from, msg) {
+function openResponseModal(type, need, cardName, from, msg, alsoAccept = [], dodgesNeeded = 1) {
   const me = STATE.room?.players.find(p => p.id === STATE.playerId);
-  const matching = (me?.hand || []).filter(c => c.name === need);
+  // รวมการ์ดที่ใช้ตอบโต้ได้: ตรงชนิด + ที่ passive อนุญาตเพิ่ม
+  const matching = (me?.hand || []).filter(c => {
+    if (c.name === need) return true;
+    if (alsoAccept.includes(c.name)) return true;
+    if (alsoAccept.includes('_black') && c.color === 'black') return true;
+    return false;
+  });
   const needTh = need === 'Dodge' ? 'หลบหลีก' : 'โจมตี';
   const cardThNeed = window.CARD_DATA[need]?.nameTh || needTh;
+  const extraHint = alsoAccept.length
+    ? `<div style="color:#f39c12;font-size:0.75rem;text-align:center;margin-bottom:4px">✨ ทักษะพิเศษ: ${
+        alsoAccept.includes('Attack') ? 'การ์ดโจมตีใช้หลบได้' :
+        alsoAccept.includes('Dodge') ? 'การ์ดหลบใช้โจมตีได้' :
+        alsoAccept.includes('_black') ? 'การ์ดสีดำใช้หลบได้' : ''
+      }</div>` : '';
+  const dodgesHint = dodgesNeeded > 1
+    ? `<div style="color:#e74c3c;font-size:0.8rem;text-align:center;margin-bottom:4px">⚠️ ต้องหลบ ${dodgesNeeded} ครั้ง (ลู่ปู้: ศักดิ์ศรีนักรบ)</div>` : '';
 
   const cardsHTML = matching.length
     ? matching.map(c => {
         const cd = window.CARD_DATA[c.name];
-        return `<div class="resp-card" data-cardid="${c.id}">
+        const isExtra = c.name !== need;
+        return `<div class="resp-card ${isExtra ? 'resp-card-alt' : ''}" data-cardid="${c.id}" title="${isExtra ? '✨ ใช้แทนได้ (ทักษะ)' : ''}">
           <img src="${cd?.image||''}" onerror="this.style.display='none'">
           ${suitPip(c)}
         </div>`;
@@ -905,6 +926,7 @@ function openResponseModal(type, need, cardName, from, msg) {
     <div class="modal gold-frame" style="width:440px">
       <h2 style="color:#e74c3c">⚠️ ต้องตอบโต้!</h2>
       <div style="text-align:center;color:var(--text);margin-bottom:16px;line-height:1.6">${msg}</div>
+      ${dodgesHint}${extraHint}
       <div style="color:var(--text-dim);font-size:0.8rem;text-align:center;margin-bottom:8px">เลือกการ์ด${cardThNeed}เพื่อตอบโต้:</div>
       <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:16px" id="resp-cards">${cardsHTML}</div>
       <button class="btn btn-cancel" id="resp-decline" style="width:100%">
@@ -917,7 +939,8 @@ function openResponseModal(type, need, cardName, from, msg) {
   overlay.classList.add('active');
 
   overlay.querySelectorAll('.resp-card').forEach(el => {
-    addTooltipHover(el, () => cardTooltipHTML(matching.find(c => c.id === el.dataset.cardid).name));
+    const c = matching.find(c => c.id === el.dataset.cardid);
+    if (c) addTooltipHover(el, () => cardTooltipHTML(c.name));
     el.addEventListener('click', () => {
       socket.emit('respondCard', { cardId: el.dataset.cardid });
       overlay.classList.remove('active');

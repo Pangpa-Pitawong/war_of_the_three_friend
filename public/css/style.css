@@ -954,6 +954,7 @@ html, body {
 }
 .resp-card:hover { transform: translateY(-6px) scale(1.05); border-color: var(--gold-light); box-shadow: 0 0 16px rgba(201,168,76,0.6); }
 .resp-card img { width: 100%; height: 100%; object-fit: cover; }
+.resp-card.resp-card-alt { border-color: #9b59b6; box-shadow: 0 0 8px rgba(155,89,182,0.5); }
 
 /* ─── Loading ─────────────────────────────────────────────────────────── */
 #screen-loading { z-index: 50; }
