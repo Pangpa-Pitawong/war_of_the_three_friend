@@ -573,6 +573,29 @@ function renderRoll() {
   document.getElementById('roll-countdown').textContent = 'กำลังเข้าสู่การเลือกตัวละคร...';
 }
 
+// ─── การ์ดอุปกรณ์ที่ติดตั้งหน้าผู้เล่น (ทุกคนมองเห็น) ─────────────────────────────
+function equipCardsHTML(p) {
+  const slots = [
+    ['weapon', '⚔ อาวุธ'],
+    ['armor', '🛡 เกราะ'],
+    ['atkMount', '🐴 ม้าบุก'],
+    ['defMount', '🐎 ม้าหนี'],
+  ];
+  return slots.filter(([k]) => p.equipment?.[k]).map(([k, label]) => {
+    const card = p.equipment[k];
+    const cd = window.CARD_DATA[card.name];
+    const img = cd?.image
+      ? `<img src="${cd.image}" alt="${card.name}" onerror="this.style.display='none'">`
+      : '';
+    const nm = (cd?.nameTh || card.name).split('(')[0].trim();
+    return `<div class="equip-card equip-${k}" data-equip="${card.name}" title="${label}: ${nm}">
+      ${img}
+      ${suitPip(card)}
+      <div class="equip-card-name">${nm}</div>
+    </div>`;
+  }).join('');
+}
+
 // ─── Game Board Render ─────────────────────────────────────────────────
 function renderGame() {
   const room = STATE.room;
@@ -610,10 +633,7 @@ function renderGame() {
       <span class="hp-heart ${hi < p.hp ? 'full' : 'empty'}">${hi < p.hp ? '❤' : '♡'}</span>
     `).join('');
 
-    const equips = Object.entries(p.equipment || {}).filter(([, v]) => v).map(([k, v]) => {
-      const icons = { weapon: '⚔', armor: '🛡', atkMount: '🐴', defMount: '🐎' };
-      return `<div class="equip-icon" title="${v?.name || k}">${icons[k] || '⚙'}</div>`;
-    }).join('');
+    const equips = equipCardsHTML(p);
 
     const targetable = STATE.selectingTarget && !isSelf && !dead && isTargetable(STATE.selectedCard, p);
 
@@ -660,6 +680,12 @@ function renderGame() {
       addTooltipHover(node, () => charTooltipHTML(p.character));
     }
 
+    // Hover รายละเอียดการ์ดอุปกรณ์ (แยกจาก tooltip ตัวละคร)
+    node.querySelectorAll('[data-equip]').forEach(el => {
+      el.addEventListener('mouseenter', e => { e.stopPropagation(); showTooltip(cardTooltipHTML(el.dataset.equip), e.clientX, e.clientY); });
+      el.addEventListener('mouseleave', e => { e.stopPropagation(); hideTooltip(); });
+    });
+
     ring.appendChild(node);
   });
 
@@ -703,6 +729,23 @@ function renderGame() {
   document.getElementById('btn-end-turn').style.display = isMyTurn ? 'block' : 'none';
   document.getElementById('btn-cancel-target').style.display = STATE.selectingTarget ? 'block' : 'none';
 
+  // ── ไฮไลท์กองไพ่ให้กดจั่วเอง (เฟสจั่วของผู้เล่นปัจจุบัน) ──
+  const myDrawTurn = !!(game && players[game.currentPlayer]?.id === STATE.playerId
+    && game.phase === 'draw' && game.awaitingDraw);
+  const deckPile = document.getElementById('deck-pile');
+  const deckLabel = document.getElementById('deck-pile-label');
+  if (deckPile) {
+    deckPile.classList.toggle('draw-ready', myDrawTurn);
+    deckPile.style.cursor = myDrawTurn ? 'pointer' : 'default';
+  }
+  if (deckLabel) deckLabel.textContent = myDrawTurn ? '👆 กดเพื่อจั่ว!' : 'กองไพ่';
+  // แจ้งเตือนครั้งเดียวเมื่อถึงตาจั่วของเรา
+  if (myDrawTurn && !STATE._drawPrompted) {
+    notify('🎴 ถึงตาคุณ — กดที่กองไพ่กลางกระดานเพื่อจั่วการ์ด 2 ใบ', 'info', 4500);
+    STATE._drawPrompted = true;
+  }
+  if (!myDrawTurn) STATE._drawPrompted = false;
+
   // ปุ่มใช้ทักษะตัวละคร (เฉพาะตัวละครที่มีทักษะแบบสั่งใช้)
   const skillBtn = document.getElementById('btn-use-skill');
   const sk = room.mySkill;
@@ -712,8 +755,15 @@ function renderGame() {
     skillBtn.style.opacity = sk.usable ? '1' : '0.45';
     skillBtn.style.cursor = sk.usable ? 'pointer' : 'not-allowed';
     skillBtn.title = sk.usable ? sk.desc : (sk.reason || 'ใช้ทักษะตอนนี้ไม่ได้');
+    skillBtn.classList.toggle('ready', !!sk.usable);
+    // แจ้งเตือนเมื่อทักษะ "เพิ่งจะใช้ได้" (เปลี่ยนสถานะเป็นใช้ได้)
+    if (sk.usable && !STATE._skillWasUsable) {
+      notify(`✨ ใช้ทักษะ「${sk.name}」ได้แล้ว — กดปุ่ม "ใช้ทักษะ" เพื่อเลือกใช้`, 'success', 4500);
+    }
+    STATE._skillWasUsable = !!sk.usable;
   } else {
     skillBtn.style.display = 'none';
+    STATE._skillWasUsable = false;
   }
 
   // ปิดหน้าต่างตอบโต้/เพอช เมื่อไม่เกี่ยวข้องแล้ว
@@ -1156,6 +1206,16 @@ document.getElementById('btn-confirm-draft')?.addEventListener('click', () => {
 
 // ─── เปิดดูกองทิ้ง ─────────────────────────────────────────────────────────
 document.getElementById('discard-pile')?.addEventListener('click', openDiscardModal);
+
+// ─── กดกองไพ่เพื่อจั่วการ์ดเอง (เฟสจั่ว) ────────────────────────────────────────
+document.getElementById('deck-pile')?.addEventListener('click', () => {
+  const game = STATE.room?.game;
+  const players = STATE.room?.players || [];
+  const myDrawTurn = game && players[game.currentPlayer]?.id === STATE.playerId
+    && game.phase === 'draw' && game.awaitingDraw;
+  if (!myDrawTurn) return;
+  socket.emit('drawCards');
+});
 
 document.getElementById('btn-leave-lobby').addEventListener('click', () => {
   socket.emit('leaveRoom');

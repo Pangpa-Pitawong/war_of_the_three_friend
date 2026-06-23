@@ -288,6 +288,7 @@ class Room {
         turn: g.turn,
         currentPlayer: g.currentPlayer,
         phase: g.phase,
+        awaitingDraw: !!g.awaitingDraw,
         deckSize: g.deck.length,
         discardTop: g.discardPile.slice(-1)[0] || null,
         discardCount: g.discardPile.length,
@@ -404,6 +405,7 @@ class Game {
     this.turn = 0;
     this.currentPlayer = 0;
     this.phase = 'start';
+    this.awaitingDraw = false;
     this.log = [];
     this.timer = null;
     this.timerInterval = null;
@@ -572,15 +574,32 @@ class Game {
     this.phase = 'start';
     // 2) เปิดการ์ดตัดสิน (Judgment) — เคราะห์สายฟ้า/เสพสุข (ฉบับย่อ: ข้าม)
     this.phase = 'judge';
-    // 3) จั่วการ์ด — หยิบ 2 ใบ
+    // 3) จั่วการ์ด — รอผู้เล่นกดจั่วเอง (ไฮไลท์ที่กองไพ่)
     this.phase = 'draw';
+    this.awaitingDraw = true;
+    this.addLog(cur.username, '🎴 ถึงเฟสจั่วการ์ด — กดที่กองไพ่เพื่อจั่ว 2 ใบ');
+    this.startTimer();
+    this.broadcast();
+  }
+
+  // ผู้เล่นกดจั่วการ์ดเอง (เฟสจั่ว) — auto=true เมื่อหมดเวลาแล้วจั่วให้อัตโนมัติ
+  playerDraw(playerId, auto = false) {
+    const players = this.room.players;
+    const cur = players[this.currentPlayer];
+    if (!auto) {
+      if (cur.id !== playerId) return { ok: false, msg: 'ไม่ใช่ตาของคุณ' };
+      if (this.phase !== 'draw' || !this.awaitingDraw) return { ok: false, msg: 'ยังไม่ถึงเฟสจั่วการ์ด' };
+    }
+    if (!this.awaitingDraw) return { ok: false, msg: 'จั่วการ์ดไปแล้ว' };
+    this.awaitingDraw = false;
     const drawn = this.drawCards(2);
     cur.hand.push(...drawn);
-    this.addLog(cur.username, `จั่วการ์ด 2 ใบ (มือ ${cur.hand.length} ใบ)`);
-    // 4) เล่นการ์ด — รอผู้เล่น
+    this.addLog(cur.username, `จั่วการ์ด 2 ใบ${auto ? ' (อัตโนมัติ)' : ''} (มือ ${cur.hand.length} ใบ)`);
+    // 4) เล่นการ์ด — รอผู้เล่น (เริ่มจับเวลาใหม่สำหรับเฟสเล่น)
     this.phase = 'play';
     this.startTimer();
     this.broadcast();
+    return { ok: true };
   }
 
   startTimer() {
@@ -592,8 +611,10 @@ class Game {
       this.timer--;
       if (this.timer <= 0) {
         clearInterval(this.timerInterval);
-        // ถ้ามีการตอบโต้ค้างอยู่ ให้ปล่อยผ่าน (ไม่หลบ); ไม่งั้นจบตา
+        // ถ้ามีการตอบโต้ค้างอยู่ ให้ปล่อยผ่าน (ไม่หลบ);
+        // ถ้ายังไม่จั่ว ให้จั่วอัตโนมัติแล้วเข้าเฟสเล่น; ไม่งั้นจบตา
         if (this.pending) this.resolveResponse(this.pending.responderId, null);
+        else if (this.awaitingDraw) this.playerDraw(this.room.players[this.currentPlayer].id, true);
         else this.endTurn(this.room.players[this.currentPlayer].id);
       }
       io.to(this.room.code).emit('timerTick', this.timer);
@@ -978,6 +999,7 @@ class Game {
     const cur = players[this.currentPlayer];
     if (cur.id !== playerId && playerId !== '__timeout__') return;
     if (this.pending || this.dyingPlayerId) return; // ห้ามจบตาระหว่างรอตอบโต้
+    if (this.awaitingDraw) return; // ต้องจั่วการ์ดก่อนจึงจบตาได้
     clearInterval(this.timerInterval);
 
     // 5) เฟสทิ้งการ์ด — เก็บการ์ดได้ไม่เกินพลังชีวิตปัจจุบัน (ตามคู่มือ)
@@ -1228,6 +1250,16 @@ io.on('connection', (socket) => {
     const room = rooms.get(info.roomCode);
     if (!room || !room.game) return;
     room.game.declinePeach(info.playerId);
+  });
+
+  // ผู้เล่นกดจั่วการ์ดเอง (เฟสจั่ว)
+  socket.on('drawCards', () => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    const result = room.game.playerDraw(info.playerId);
+    if (result && !result.ok && result.msg) socket.emit('error', result.msg);
   });
 
   socket.on('endTurn', () => {
