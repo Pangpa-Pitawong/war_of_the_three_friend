@@ -35,15 +35,15 @@ function notify(msg, type = 'info', duration = 3500) {
 
 // ─── จำนวนการ์ดแต่ละใบในสำรับ (รวม 108 ใบ) ───────────────────────────────────
 window.CARD_COUNTS = {
-  'Attack': 30, 'Dodge': 15, 'Peach': 8,
+  'Attack': 30, 'Dodge': 15, 'Peach': 1,
   'Something Out of Nothing': 4, 'Duel': 3, 'Burning Bridges': 6, 'Steal': 5,
-  'Borrowed Sword': 2, 'Negation': 4, 'Barbarian Invasion': 3, 'Raining Arrows': 1,
+  'Borrowed Sword': 2, 'Negation': 3, 'Barbarian Invasion': 3, 'Raining Arrows': 1,
   'Oath of the Peach Garden': 1, 'Bumper Harvest': 2, 'Lightning': 2, 'Overindulgence': 3,
-  'Zhuge Crossbow': 1, 'Yin-Yang Swords': 1, 'Blue Steel Sword': 1, 'Frost Sword': 1,
+  'Zhuge Crossbow': 2, 'Yin-Yang Swords': 1, 'Blue Steel Sword': 1, 'Frost Sword': 1,
   'Green Dragon Blade': 1, 'Serpent Spear': 1, 'Rock Cleaving Axe': 1,
   'Sky Piercing Halberd': 1, 'Kirin Bow': 1,
-  'Eight Trigrams Formation': 1, 'Nio Shield': 1,
-  'Fergana Steed': 4, 'Shadowrunner': 4,
+  'Eight Trigrams Formation': 2, 'Nio Shield': 1,
+  'Fergana Steed': 3, 'Shadowrunner': 3,
 };
 
 // ─── Tooltip System ────────────────────────────────────────────────────

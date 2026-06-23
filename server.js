@@ -30,21 +30,21 @@ function genRoomCode() {
 function genPlayerId() { return uuidv4().slice(0, 8).toUpperCase(); }
 
 // ─── Card Deck ────────────────────────────────────────────────────────────────
-// ─── องค์ประกอบสำรับการ์ด (108 ใบ — ฉบับมาตรฐาน) ───────────────────────────────
-// คู่มือระบุ: การ์ดพื้นฐาน + การ์ดกล + อุปกรณ์ รวม 108 ใบ
-//  พื้นฐาน 53 | กล 36 | อุปกรณ์ 19
+// ─── องค์ประกอบสำรับการ์ด (100 ใบ — ฉบับ War of the Three Friend) ────────────────
+// การ์ดพื้นฐาน + การ์ดกล + อุปกรณ์
+//  พื้นฐาน 46 (โจมตี30/หลบหลีก15/ลูกท้อ1) | กล 35 | อุปกรณ์ 19 (อาวุธ10/เกราะ3/ม้า6)
 const CARD_TEMPLATES = [
   // ── การ์ดพื้นฐาน (Basic) 53 ใบ ──
   { name: 'Attack',  type: 'basic', count: 30 },              // โจมตี 杀
   { name: 'Dodge',   type: 'basic', count: 15 },              // หลบหลีก 闪
-  { name: 'Peach',   type: 'basic', count: 8,  redOnly: true },// เพอช 桃 (ไพ่แดงเสมอ)
-  // ── การ์ดกล (Stratagem/Trick) 36 ใบ ──
+  { name: 'Peach',   type: 'basic', count: 1,  redOnly: true },// เพอช 桃 (ไพ่แดงเสมอ)
+  // ── การ์ดกล (Stratagem/Trick) ──
   { name: 'Something Out of Nothing', type: 'stratagem', count: 4 },  // 无中生有
   { name: 'Duel',                     type: 'stratagem', count: 3 },  // 决斗
   { name: 'Burning Bridges',          type: 'stratagem', count: 6 },  // 过河拆桥
   { name: 'Steal',                    type: 'stratagem', count: 5 },  // 顺手牵羊
   { name: 'Borrowed Sword',           type: 'stratagem', count: 2 },  // 借刀杀人
-  { name: 'Negation',                 type: 'stratagem', count: 4 },  // 无懈可击
+  { name: 'Negation',                 type: 'stratagem', count: 3 },  // 无懈可击
   { name: 'Barbarian Invasion',       type: 'stratagem', count: 3 },  // 南蛮入侵
   { name: 'Raining Arrows',           type: 'stratagem', count: 1 },  // 万箭齐发
   { name: 'Oath of the Peach Garden', type: 'stratagem', count: 1 },  // 桃园结义
@@ -52,7 +52,7 @@ const CARD_TEMPLATES = [
   { name: 'Lightning',                type: 'stratagem', count: 2, fixed: { suit: '♠' } }, // 闪电 (โพดำ)
   { name: 'Overindulgence',           type: 'stratagem', count: 3 },  // 乐不思蜀
   // ── อุปกรณ์: อาวุธ (Weapons) 9 ใบ — ใบละ 1 ──
-  { name: 'Zhuge Crossbow',     type: 'weapon', count: 1, range: 1 },
+  { name: 'Zhuge Crossbow',     type: 'weapon', count: 2, range: 1 },
   { name: 'Yin-Yang Swords',    type: 'weapon', count: 1, range: 2 },
   { name: 'Blue Steel Sword',   type: 'weapon', count: 1, range: 2 },
   { name: 'Frost Sword',        type: 'weapon', count: 1, range: 2 },
@@ -62,11 +62,11 @@ const CARD_TEMPLATES = [
   { name: 'Sky Piercing Halberd', type: 'weapon', count: 1, range: 4 },
   { name: 'Kirin Bow',          type: 'weapon', count: 1, range: 5 },
   // ── อุปกรณ์: เกราะ (Armor) 2 ใบ — ใบละ 1 ──
-  { name: 'Eight Trigrams Formation', type: 'armor', count: 1 },
+  { name: 'Eight Trigrams Formation', type: 'armor', count: 2 },
   { name: 'Nio Shield',               type: 'armor', count: 1 },
-  // ── อุปกรณ์: ม้า (Mounts) 8 ใบ ──
-  { name: 'Fergana Steed', type: 'mount', count: 4, effect: '-1atk' }, // ม้าโจมตี -1
-  { name: 'Shadowrunner',  type: 'mount', count: 4, effect: '+1def' }, // ม้าป้องกัน +1
+  // ── อุปกรณ์: ม้า (Mounts) ──
+  { name: 'Fergana Steed', type: 'mount', count: 3, effect: '+1def' }, // ม้าป้องกัน -1 (คนอื่นโจมตียากขึ้น)
+  { name: 'Shadowrunner',  type: 'mount', count: 3, effect: '-1atk' }, // ม้าโจมตี +1 (ขยายระยะโจมตีของผู้ถือ)
 ];
 
 const SUITS = ['♠', '♥', '♣', '♦'];      // โพดำ โพแดง ดอกจิก ข้าวหลามตัด
@@ -154,12 +154,12 @@ const LORD_CHARACTERS = ['caocao', 'liubei', 'sunquan'];
 // ใช้ได้เฉพาะเฟสเล่นการ์ดของเจ้าของตัวละครเท่านั้น (ตรวจเงื่อนไขใน canUseSkill)
 //   needs: 'cards'(เลือกไพ่หลายใบ) | 'card+target'(ไพ่ 1 ใบ + เป้าหมาย) | 'confirm'(กดยืนยัน)
 const ACTIVE_SKILLS = {
-  sunquan:  { key: 'zhiheng',  name: 'ถ่วงดุลอำนาจ (制衡)', needs: 'cards',       oncePerTurn: true,
-              desc: 'ทิ้งไพ่จากมือกี่ใบก็ได้ แล้วจั่วใหม่เท่าจำนวนที่ทิ้ง (ใช้ครั้งเดียวต่อตา)' },
-  huanggai: { key: 'kurou',    name: 'ทรมานตัวเอง (苦肉)',  needs: 'confirm',     oncePerTurn: false,
-              desc: 'เสียพลังชีวิต 1 แล้วจั่วไพ่ 2 ใบ' },
-  huatuo:   { key: 'qingnang', name: 'ถุงยาเขียว (青囊)',   needs: 'card+target', oncePerTurn: true,
-              desc: 'ทิ้งไพ่ 1 ใบ เพื่อรักษาผู้เล่นเป้าหมาย 1 พลังชีวิต (ใช้ครั้งเดียวต่อตา)' },
+  sunquan:  { key: 'zhiheng',  name: 'ความสมดุล (制衡)', needs: 'cards',       oncePerTurn: true,
+              desc: 'จำกัด 1 ครั้งต่อช่วงเล่นการ์ด ทิ้งการ์ดจำนวนเท่าใดก็ได้ แล้วจั่วการ์ดจำนวนเท่ากันมาแทน' },
+  huanggai: { key: 'kurou',    name: 'เสียสละตน (苦肉)',  needs: 'confirm',     oncePerTurn: false,
+              desc: 'เสีย HP 1 หน่วยเพื่อจั่วการ์ด 2 ใบ' },
+  huatuo:   { key: 'qingnang', name: 'หมอผู้เมตตา (青囊)',   needs: 'card+target', oncePerTurn: true,
+              desc: 'จำกัด 1 ครั้งต่อช่วงเล่นการ์ด ทิ้งการ์ด 1 ใบจากมือเพื่อให้ตัวละครที่บาดเจ็บฟื้น HP 1 หน่วย' },
 };
 
 // การ์ดที่ใช้ "ตอบโต้" เท่านั้น — ห้ามเล่นเชิงรุกในเฟสเล่นการ์ด
