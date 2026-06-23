@@ -927,9 +927,118 @@ html, body {
 }
 .hidden { display: none !important; }
 
-/* ─── Responsive ──────────────────────────────────────────────────────── */
+/* ─── Roll Reveal (สุ่มบทบาท) ─────────────────────────────────────────────── */
+#roll-grid {
+  display: flex; flex-wrap: wrap; gap: 18px;
+  justify-content: center; max-width: 960px;
+}
+.roll-player { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100px; }
+.roll-card {
+  width: 92px; height: 130px;
+  border-radius: 8px; overflow: hidden;
+  border: 2px solid var(--border);
+  background: rgba(0,0,0,0.5);
+  box-shadow: var(--shadow);
+  animation: roll-flip 0.6s ease;
+}
+.roll-card.revealed { border-color: var(--gold); box-shadow: 0 0 18px rgba(201,168,76,0.4); }
+.roll-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.roll-name { font-size: 0.75rem; color: var(--text); text-align: center; }
+.roll-role { font-size: 0.8rem; font-weight: 700; }
+@keyframes roll-flip {
+  0% { transform: rotateY(90deg); opacity: 0; }
+  100% { transform: rotateY(0); opacity: 1; }
+}
+
+/* ─── การ์ดบทบาทเล็ก (มุมรูปผู้เล่นในเกม) ─────────────────────────────────── */
+.role-card-mini {
+  position: absolute; bottom: -4px; left: -8px;
+  width: 26px; height: 36px;
+  border-radius: 3px; object-fit: cover;
+  border: 1px solid var(--gold);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.7);
+  background: var(--dark);
+  z-index: 3;
+}
+
+/* ─── ปุ่ม/หน้าต่างทักษะ ──────────────────────────────────────────────────── */
+.action-btn.skill:hover { background: rgba(155,89,182,0.5); }
+.hand-card.unplayable { opacity: 0.4; filter: grayscale(0.7); }
+.hand-card.unplayable:hover { transform: none; border-color: rgba(201,168,76,0.3); }
+.skill-card-row {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 6px; background: rgba(0,0,0,0.3); border-radius: var(--radius);
+  max-height: 200px; overflow-y: auto;
+}
+.skill-pick { border-width: 2px; }
+.skill-pick.selected { border-color: var(--gold-light); box-shadow: 0 0 12px rgba(201,168,76,0.6); transform: translateY(-4px); }
+.skill-target-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.skill-target {
+  padding: 8px 12px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: rgba(0,0,0,0.3);
+  cursor: pointer; text-align: center; font-size: 0.82rem; transition: all 0.15s;
+}
+.skill-target:hover { border-color: var(--gold); }
+.skill-target.selected { border-color: var(--gold-light); background: rgba(201,168,76,0.2); }
+
+/* ─── Responsive: รองรับมือถือ/แท็บเล็ต/PC ─────────────────────────────────── */
+/* แท็บเล็ตและจอเล็ก */
+@media (max-width: 1024px) {
+  .charselect-layout { flex-direction: column; height: auto; max-height: calc(100vh - 90px); overflow-y: auto; }
+  .char-detail-panel { min-height: 280px; }
+}
+
+/* มือถือ (แนวตั้ง/แนวนอนเล็ก) */
 @media (max-width: 768px) {
-  .game-sidebar { display: none; }
+  /* ล็อบบี้ + แชท: เรียงแนวตั้ง */
+  #screen-lobby { flex-direction: column !important; align-items: stretch !important; padding: 12px !important; gap: 12px !important; }
   .lobby-main { width: 100%; }
-  .chat-panel { display: none; }
+  .chat-panel { width: 100%; height: 280px; }
+
+  /* กระดานเกม: ย่อโต๊ะ + ย้าย sidebar ลงล่างเป็นแถบเลื่อน */
+  .game-layout { flex-direction: column; }
+  .players-ring::before { width: min(64vw, 64vh); height: min(64vw, 64vh); }
+  .players-ring::after { width: min(44vw, 44vh); height: min(44vw, 44vh); }
+  .player-portrait { width: 56px; height: 78px; }
+  .player-hp-bar, .player-node-name { width: 56px; max-width: 56px; }
+  .player-node-name { font-size: 0.6rem; }
+  .player-hp-text { font-size: 0.55rem; }
+  .role-card-mini { width: 20px; height: 28px; left: -6px; }
+
+  .game-sidebar {
+    width: 100%; height: 168px;
+    border-left: none; border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .board-center { width: 150px; height: 150px; transform: translate(-50%, -50%) scale(0.85); }
+  .card-pile { width: 48px; height: 67px; }
+  .timer-ring { width: 38px; height: 38px; font-size: 0.9rem; }
+
+  /* ไพ่ในมือ: เลื่อนแนวนอนได้ + การ์ดเล็กลง */
+  .my-hand-area { height: 120px; }
+  .hand-card { width: 56px; height: 78px; }
+  .hand-card:hover { transform: translateY(-6px); }
+
+  /* Modal: เต็มความกว้างเกือบหมดจอ */
+  .modal { width: 94vw !important; max-width: 94vw !important; max-height: 88vh; overflow-y: auto; }
+
+  /* ดราฟต์: เรียงแนวตั้ง */
+  .char-grid { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)) !important; }
+  .roll-card { width: 72px; height: 102px; }
+  .roll-player { width: 80px; }
+}
+
+/* มือถือจอแคบมาก */
+@media (max-width: 420px) {
+  .player-portrait { width: 46px; height: 64px; }
+  .player-hp-bar, .player-node-name { width: 46px; max-width: 46px; }
+  .hand-card { width: 48px; height: 67px; }
+  .action-btn { padding: 5px 9px; font-size: 0.72rem; }
+  .menu-logo h1 { font-size: 1.4rem; }
+}
+
+/* อุปกรณ์สัมผัส: เป้ากดใหญ่ขึ้น, ปิด hover-lift ที่กวนใจ */
+@media (hover: none) {
+  .hand-card:hover { transform: none; }
+  .player-node:hover { transform: none; }
 }

@@ -244,6 +244,19 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- SCREEN: ROLL (สุ่มบทบาท — เปิดการ์ด Roll ของแต่ละคน) -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="screen-roll" class="screen" style="padding:16px">
+  <h2 style="color:var(--gold);letter-spacing:3px;margin-bottom:6px">🎲 สุ่มบทบาท</h2>
+  <div id="roll-subtitle" style="color:var(--text-dim);font-size:0.9rem;margin-bottom:22px;text-align:center">เปิดการ์ดบทบาทของแต่ละคน...</div>
+  <div id="roll-grid"></div>
+  <div id="roll-countdown" style="margin-top:24px;color:var(--gold);font-size:0.9rem;text-align:center"></div>
+</div>
+
+<!-- Skill modal (ใช้ทักษะตัวละคร) -->
+<div id="modal-skill" class="modal-overlay" style="z-index:200"></div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
 <!-- SCREEN: DRAFT (สุ่มโรล → เลือกตัวละคร · จักรพรรดิเลือกก่อน) -->
 <!-- ══════════════════════════════════════════════════════════════════════ -->
 <div id="screen-draft" class="screen" style="padding:16px;align-items:stretch">
@@ -340,6 +353,7 @@
       <div class="my-hand-area">
         <div class="my-hand-label">ไพ่ในมือ</div>
         <div class="hand-actions">
+          <button class="action-btn skill" id="btn-use-skill" style="display:none;background:rgba(155,89,182,0.25);border-color:#9b59b6;color:#d2a8e8">✨ ใช้ทักษะ</button>
           <button class="action-btn" id="btn-cancel-target" style="display:none;background:rgba(52,152,219,0.2);border-color:#3498db;color:#3498db">✕ ยกเลิก</button>
           <button class="action-btn end-turn" id="btn-end-turn" style="display:none">⏭ จบตา</button>
         </div>

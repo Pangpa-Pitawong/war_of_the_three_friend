@@ -201,6 +201,12 @@ socket.on('joinedRoom', ({ playerId }) => {
 
 socket.on('roomUpdate', (room) => {
   STATE.room = room;
+  // เปิดการ์ดบทบาท (Roll) ก่อนเข้าสู่การเลือกตัวละคร
+  if (room.state === 'rolling') {
+    if (STATE.currentScreen !== 'roll') showScreen('roll');
+    renderRoll();
+    return;
+  }
   // เข้าสู่ขั้นตอนเลือกตัวละคร (สุ่มโรลแล้ว) → แสดงหน้าดราฟต์
   if (room.state === 'selecting') {
     if (STATE.currentScreen !== 'draft') {
@@ -506,6 +512,45 @@ function fillDraftPreview(id) {
   `).join('');
 }
 
+// ─── Roll Reveal (สุ่มบทบาท) ─────────────────────────────────────────────
+const CARD_BACK = '/BackCard/Screenshot 2026-06-23 011011.png';
+
+// คืน URL การ์ดบทบาท: รู้บทบาท → รูป Roll, ไม่รู้ → หลังการ์ด
+function roleCardImage(role) {
+  if (role && role !== '?') return window.ROLE_DATA[role]?.image || CARD_BACK;
+  return CARD_BACK;
+}
+
+function renderRoll() {
+  const room = STATE.room;
+  if (!room) return;
+  const lordId = room.players.find(p => p.role === 'Lord')?.id;
+  const iAmLord = room.players.find(p => p.id === STATE.playerId)?.role === 'Lord';
+  document.getElementById('roll-subtitle').textContent = iAmLord
+    ? '👑 คุณคือจักรพรรดิ! เตรียมเลือกตัวละครก่อนใคร'
+    : 'เปิดการ์ดบทบาท — เห็นเฉพาะของตัวเอง (จักรพรรดิเปิดให้ทุกคนเห็น)';
+
+  const grid = document.getElementById('roll-grid');
+  grid.innerHTML = room.players.map(p => {
+    const isSelf = p.id === STATE.playerId;
+    const isLord = p.id === lordId;
+    const known = (p.role && p.role !== '?');   // ของตัวเอง หรือจักรพรรดิ
+    const rd = known ? window.ROLE_DATA[p.role] : null;
+    const label = known ? rd.nameTh : '???';
+    const color = rd?.color || 'var(--text-dim)';
+    const tag = isLord ? '👑 จักรพรรดิ' : (isSelf ? '(คุณ)' : '');
+    return `<div class="roll-player">
+      <div class="roll-card ${known ? 'revealed' : 'hidden-card'}">
+        <img src="${roleCardImage(p.role)}" alt="${label}" onerror="this.style.display='none'">
+      </div>
+      <div class="roll-name">${p.username} ${tag}</div>
+      <div class="roll-role" style="color:${color}">${label}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('roll-countdown').textContent = 'กำลังเข้าสู่การเลือกตัวละคร...';
+}
+
 // ─── Game Board Render ─────────────────────────────────────────────────
 function renderGame() {
   const room = STATE.room;
@@ -569,6 +614,9 @@ function renderGame() {
           src="${char.image || ''}" alt="${p.username}"
           onerror="this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'80\\' height=\\'110\\'><rect fill=\\'%23333\\' width=\\'80\\' height=\\'110\\'/></svg>'"
         >
+        <img class="role-card-mini" src="${roleCardImage(p.role)}"
+          title="${(p.role && p.role!=='?') ? (window.ROLE_DATA[p.role]?.nameTh||'') : 'บทบาทซ่อนอยู่'}"
+          onerror="this.style.display='none'">
         <div class="player-hand-count">${p.handCount}</div>
       </div>
       <div class="player-hp-bar"><div class="player-hp-fill ${hpClass}" style="width:${hpPct}%"></div></div>
@@ -633,6 +681,19 @@ function renderGame() {
   document.getElementById('btn-end-turn').style.display = isMyTurn ? 'block' : 'none';
   document.getElementById('btn-cancel-target').style.display = STATE.selectingTarget ? 'block' : 'none';
 
+  // ปุ่มใช้ทักษะตัวละคร (เฉพาะตัวละครที่มีทักษะแบบสั่งใช้)
+  const skillBtn = document.getElementById('btn-use-skill');
+  const sk = room.mySkill;
+  if (sk) {
+    skillBtn.style.display = 'block';
+    skillBtn.textContent = `✨ ${sk.name}`;
+    skillBtn.style.opacity = sk.usable ? '1' : '0.45';
+    skillBtn.style.cursor = sk.usable ? 'pointer' : 'not-allowed';
+    skillBtn.title = sk.usable ? sk.desc : (sk.reason || 'ใช้ทักษะตอนนี้ไม่ได้');
+  } else {
+    skillBtn.style.display = 'none';
+  }
+
   // ปิดหน้าต่างตอบโต้/เพอช เมื่อไม่เกี่ยวข้องแล้ว
   const respOverlay = document.getElementById('modal-response');
   const pendingForMe = game?.pending && game.pending.responderId === STATE.playerId;
@@ -657,15 +718,35 @@ function isTargetable(card, p) {
   return true;
 }
 
+// ─── เงื่อนไขการเล่นการ์ด (mirror ฝั่งเซิร์ฟเวอร์) ────────────────────────────
+const RESPONSE_ONLY_CARDS = ['Dodge', 'Negation'];
+const UNSUPPORTED_PLAY_CARDS = ['Lightning', 'Overindulgence'];
+
+// คืนข้อความปัญหาถ้าเล่นการ์ดนี้ตอนนี้ไม่ได้ (null = เล่นได้)
+function cardPlayIssue(card) {
+  if (RESPONSE_ONLY_CARDS.includes(card.name)) return 'การ์ดนี้ใช้ตอบโต้เท่านั้น เล่นเองไม่ได้';
+  if (UNSUPPORTED_PLAY_CARDS.includes(card.name)) return 'การ์ดหน่วงเวลา — ฉบับนี้ยังไม่รองรับการเล่น';
+  if (card.name === 'Peach') {
+    const me = STATE.room?.players.find(p => p.id === STATE.playerId);
+    if (me && me.hp >= me.maxHp) return 'พลังชีวิตเต็มแล้ว ใช้เพอชไม่ได้';
+  }
+  return null;
+}
+
 function renderHand(me) {
   const hand = me.hand || [];
   const container = document.getElementById('my-hand');
   container.innerHTML = '';
 
+  const game = STATE.room?.game;
+  const players = STATE.room?.players || [];
+  const myTurn = game && players[game.currentPlayer]?.id === STATE.playerId && game.phase === 'play' && !game.pending;
+
   hand.forEach(card => {
     const cd = window.CARD_DATA[card.name];
+    const unplayable = myTurn && cardPlayIssue(card);
     const div = document.createElement('div');
-    div.className = `hand-card ${STATE.selectedCard?.id === card.id ? 'selected' : ''}`;
+    div.className = `hand-card ${STATE.selectedCard?.id === card.id ? 'selected' : ''} ${unplayable ? 'unplayable' : ''}`;
     div.dataset.cardid = card.id;
     const inner = cd?.image
       ? `<img src="${cd.image}" alt="${card.name}" onerror="this.src=''">`
@@ -694,6 +775,10 @@ function onCardClick(card) {
   const players = room?.players || [];
   const isMyTurn = game && players[game.currentPlayer]?.id === STATE.playerId && game.phase === 'play';
   if (!isMyTurn) { notify('ยังไม่ใช่ตาของคุณ', 'error'); return; }
+
+  // ตรวจเงื่อนไขการเล่นการ์ดก่อน
+  const issue = cardPlayIssue(card);
+  if (issue) { notify(issue, 'error'); return; }
 
   if (STATE.selectedCard?.id === card.id) {
     // Deselect
@@ -830,6 +915,88 @@ function openDiscardModal() {
       addTooltipHover(el, () => cardTooltipHTML(el.dataset.card)));
   }
   document.getElementById('modal-discard').classList.add('active');
+}
+
+// ─── Skill Modal (ใช้ทักษะตัวละคร) ───────────────────────────────────────────
+function skillPickCardHTML(c) {
+  const cd = window.CARD_DATA[c.name];
+  return `<div class="hand-card skill-pick" data-cardid="${c.id}" style="width:54px;height:76px;flex-shrink:0">
+    <img src="${cd?.image || ''}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">
+    ${suitPip(c)}
+  </div>`;
+}
+
+function openSkillModal() {
+  const sk = STATE.room?.mySkill;
+  if (!sk) return;
+  if (!sk.usable) { notify(sk.reason || 'ใช้ทักษะตอนนี้ไม่ได้', 'error'); return; }
+  const me = STATE.room.players.find(p => p.id === STATE.playerId);
+  const hand = me?.hand || [];
+  const overlay = document.getElementById('modal-skill');
+
+  let body = '';
+  if (sk.needs === 'confirm') {
+    body = `<div style="text-align:center;margin:8px 0 16px;color:var(--text);line-height:1.6">${sk.desc}</div>
+      <button class="btn btn-confirm" id="skill-confirm" style="width:100%">✨ ยืนยันใช้ทักษะ</button>`;
+  } else if (sk.needs === 'cards') {
+    body = `<div style="color:var(--text-dim);font-size:0.8rem;margin-bottom:8px">${sk.desc}</div>
+      <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:6px">เลือกไพ่ที่จะทิ้ง (เลือกได้หลายใบ):</div>
+      <div class="skill-card-row" id="skill-cards">${hand.map(skillPickCardHTML).join('') || '<div style="color:var(--text-dim)">ไม่มีไพ่ในมือ</div>'}</div>
+      <button class="btn btn-confirm" id="skill-confirm" style="width:100%;margin-top:14px">✨ ทิ้งแล้วจั่วใหม่</button>`;
+  } else if (sk.needs === 'card+target') {
+    const targets = STATE.room.players.filter(p => p.hp > 0).map(p =>
+      `<div class="skill-target" data-target="${p.id}">${p.username}<br><span style="font-size:0.7rem;color:var(--text-dim)">${p.hp}/${p.maxHp}❤</span></div>`
+    ).join('');
+    body = `<div style="color:var(--text-dim);font-size:0.8rem;margin-bottom:8px">${sk.desc}</div>
+      <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:6px">เลือกไพ่ที่จะทิ้ง 1 ใบ:</div>
+      <div class="skill-card-row" id="skill-cards">${hand.map(skillPickCardHTML).join('')}</div>
+      <div style="color:var(--text-dim);font-size:0.78rem;margin:12px 0 6px">เลือกผู้เล่นที่จะรักษา:</div>
+      <div class="skill-target-row" id="skill-targets">${targets}</div>
+      <button class="btn btn-confirm" id="skill-confirm" style="width:100%;margin-top:14px">💚 ใช้ทักษะ</button>`;
+  }
+
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:460px;max-width:94vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0;font-size:1.1rem;color:#d2a8e8">✨ ${sk.name}</h2>
+      <button class="btn btn-cancel" id="skill-close" style="width:auto;padding:6px 12px">✕</button>
+    </div>${body}</div>`;
+  overlay.classList.add('active');
+
+  const sel = { cards: new Set(), target: null };
+  overlay.querySelectorAll('.skill-pick').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.cardid;
+      if (sk.needs === 'cards') {
+        if (sel.cards.has(id)) { sel.cards.delete(id); el.classList.remove('selected'); }
+        else { sel.cards.add(id); el.classList.add('selected'); }
+      } else {
+        sel.cards.clear();
+        overlay.querySelectorAll('.skill-pick').forEach(x => x.classList.remove('selected'));
+        sel.cards.add(id); el.classList.add('selected');
+      }
+    });
+  });
+  overlay.querySelectorAll('.skill-target').forEach(el => {
+    el.addEventListener('click', () => {
+      sel.target = el.dataset.target;
+      overlay.querySelectorAll('.skill-target').forEach(x => x.classList.remove('selected'));
+      el.classList.add('selected');
+    });
+  });
+  document.getElementById('skill-close').addEventListener('click', () => overlay.classList.remove('active'));
+  document.getElementById('skill-confirm').addEventListener('click', () => {
+    let payload = {};
+    if (sk.needs === 'cards') {
+      if (!sel.cards.size) return notify('เลือกไพ่ที่จะทิ้งก่อน', 'error');
+      payload = { cardIds: [...sel.cards] };
+    } else if (sk.needs === 'card+target') {
+      if (!sel.cards.size) return notify('เลือกไพ่ก่อน', 'error');
+      if (!sel.target) return notify('เลือกเป้าหมายก่อน', 'error');
+      payload = { cardId: [...sel.cards][0], targetId: sel.target };
+    }
+    socket.emit('useSkill', { payload });
+    overlay.classList.remove('active');
+  });
 }
 
 // ─── Chat ────────────────────────────────────────────────────────────────
@@ -1006,6 +1173,8 @@ document.getElementById('btn-cancel-target').addEventListener('click', () => {
   STATE.selectingTarget = false;
   renderGame();
 });
+
+document.getElementById('btn-use-skill')?.addEventListener('click', openSkillModal);
 
 // Sidebar tabs
 document.querySelectorAll('.sidebar-tab').forEach(tab => {

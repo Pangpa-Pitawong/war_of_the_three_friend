@@ -150,6 +150,23 @@ const CHARACTERS = [
 // ตัวละครที่มี "เอฟเฟคจักรพรรดิ" (เจ้าผู้ครองแคว้น) — ฟิกให้อยู่ในมือจักรพรรดิทุกรอบ
 const LORD_CHARACTERS = ['caocao', 'liubei', 'sunquan'];
 
+// ─── ทักษะที่ "สั่งใช้เองได้" (Active Skills) ────────────────────────────────────
+// ใช้ได้เฉพาะเฟสเล่นการ์ดของเจ้าของตัวละครเท่านั้น (ตรวจเงื่อนไขใน canUseSkill)
+//   needs: 'cards'(เลือกไพ่หลายใบ) | 'card+target'(ไพ่ 1 ใบ + เป้าหมาย) | 'confirm'(กดยืนยัน)
+const ACTIVE_SKILLS = {
+  sunquan:  { key: 'zhiheng',  name: 'ถ่วงดุลอำนาจ (制衡)', needs: 'cards',       oncePerTurn: true,
+              desc: 'ทิ้งไพ่จากมือกี่ใบก็ได้ แล้วจั่วใหม่เท่าจำนวนที่ทิ้ง (ใช้ครั้งเดียวต่อตา)' },
+  huanggai: { key: 'kurou',    name: 'ทรมานตัวเอง (苦肉)',  needs: 'confirm',     oncePerTurn: false,
+              desc: 'เสียพลังชีวิต 1 แล้วจั่วไพ่ 2 ใบ' },
+  huatuo:   { key: 'qingnang', name: 'ถุงยาเขียว (青囊)',   needs: 'card+target', oncePerTurn: true,
+              desc: 'ทิ้งไพ่ 1 ใบ เพื่อรักษาผู้เล่นเป้าหมาย 1 พลังชีวิต (ใช้ครั้งเดียวต่อตา)' },
+};
+
+// การ์ดที่ใช้ "ตอบโต้" เท่านั้น — ห้ามเล่นเชิงรุกในเฟสเล่นการ์ด
+const RESPONSE_ONLY_CARDS = ['Dodge', 'Negation'];
+// การ์ดกลหน่วงเวลา (ต้องมีเฟสตัดสิน) — ฉบับนี้ยังไม่รองรับการเล่น
+const UNSUPPORTED_PLAY_CARDS = ['Lightning', 'Overindulgence'];
+
 // ─── Roles by player count (ตรงตามตารางในคู่มือ — สามก๊กฉบับมาตรฐาน) ──────────────
 // คอลัมน์: จักรพรรดิ(Lord) / ภักดี(Loyalist) / กบฎ(Rebel) / ทรยศ(Spy)
 //  4 คน: 1 / 1 / 1 / 1
@@ -251,6 +268,8 @@ class Room {
       }),
       spectators: this.spectators.length,
       myAttackRange: g && me ? g.attackRange(me) : 1,
+      // ทักษะที่ผู้เล่นนี้สั่งใช้ได้ (ปุ่มใช้ทักษะ) — null ถ้าตัวละครไม่มีทักษะแบบสั่งใช้
+      mySkill: g && me ? g.getActiveSkill(me) : null,
       // ── ขั้นตอนเลือกตัวละคร (สุ่มโรลแล้ว จักรพรรดิเลือกก่อน) ──
       draft: this.state === 'selecting' && d ? {
         stage: d.stage,                              // 'lord' | 'others'
@@ -312,7 +331,15 @@ class Room {
       picks: {},                  // playerId -> charId
       revealed: [],               // ผู้เล่นที่เปิดเผยตัวละครแล้ว (จักรพรรดิ)
     };
-    this.state = 'selecting';
+    // เปิดการ์ดบทบาท (Roll) ให้ทุกคนก่อน ~4.5 วิ แล้วจึงไปหน้าเลือกตัวละคร
+    this.state = 'rolling';
+    clearTimeout(this.rollTimer);
+    this.rollTimer = setTimeout(() => {
+      if (this.state === 'rolling') {
+        this.state = 'selecting';
+        broadcastRoom(this);
+      }
+    }, 4500);
   }
 
   // จักรพรรดิ / ผู้เล่นเลือกตัวละครจากการ์ดในมือ
@@ -468,11 +495,77 @@ class Game {
     if (this.log.length > 200) this.log.shift();
   }
 
+  // ─── ทักษะสั่งใช้ของตัวละคร ──────────────────────────────────────────────────
+  // คืนข้อมูลทักษะ + บอกว่ากดใช้ตอนนี้ได้ไหม (usable) เพื่อให้ client แสดง/ปิดปุ่ม
+  getActiveSkill(player) {
+    if (!player || !player.character) return null;
+    const sk = ACTIVE_SKILLS[player.character];
+    if (!sk) return null;
+    const cur = this.room.players[this.currentPlayer];
+    const isMyTurn = cur && cur.id === player.id;
+    let usable = true, reason = '';
+    if (player.hp <= 0) { usable = false; reason = 'ถูกกำจัดแล้ว'; }
+    else if (!isMyTurn) { usable = false; reason = 'ใช้ได้เฉพาะตาของคุณ'; }
+    else if (this.phase !== 'play') { usable = false; reason = 'ใช้ได้เฉพาะเฟสเล่นการ์ด'; }
+    else if (this.pending) { usable = false; reason = 'กำลังรอการตอบโต้'; }
+    else if (sk.oncePerTurn && player.skillUsed?.[sk.key]) { usable = false; reason = 'ใช้ไปแล้วในตานี้'; }
+    else if ((sk.needs === 'cards' || sk.needs === 'card+target') && player.hand.length === 0) {
+      usable = false; reason = 'ไม่มีไพ่ในมือ';
+    }
+    return { key: sk.key, name: sk.name, desc: sk.desc, needs: sk.needs, usable, reason };
+  }
+
+  useSkill(playerId, payload = {}) {
+    const player = this.room.players.find(p => p.id === playerId);
+    if (!player) return { ok: false, msg: 'ไม่พบผู้เล่น' };
+    const meta = this.getActiveSkill(player);
+    if (!meta) return { ok: false, msg: 'ตัวละครนี้ไม่มีทักษะแบบสั่งใช้' };
+    if (!meta.usable) return { ok: false, msg: meta.reason || 'ใช้ทักษะตอนนี้ไม่ได้' };
+    player.skillUsed = player.skillUsed || {};
+
+    switch (player.character) {
+      case 'sunquan': {  // ถ่วงดุลอำนาจ (制衡)
+        const ids = Array.isArray(payload.cardIds) ? payload.cardIds : [];
+        const toDiscard = player.hand.filter(c => ids.includes(c.id));
+        if (toDiscard.length === 0) return { ok: false, msg: 'เลือกไพ่ที่จะทิ้งอย่างน้อย 1 ใบ' };
+        player.hand = player.hand.filter(c => !ids.includes(c.id));
+        toDiscard.forEach(c => this.discardPile.push(c));
+        player.hand.push(...this.drawCards(toDiscard.length));
+        player.skillUsed.zhiheng = true;
+        this.addLog(player.username, `🌊 ถ่วงดุลอำนาจ — ทิ้ง ${toDiscard.length} ใบ จั่วใหม่ ${toDiscard.length} ใบ`);
+        break;
+      }
+      case 'huanggai': {  // ทรมานตัวเอง (苦肉)
+        this.addLog(player.username, '🩸 ทรมานตัวเอง — เสีย 1 พลังชีวิต จั่ว 2 ใบ');
+        player.hand.push(...this.drawCards(2));
+        this.dealDamage(player, 1, null);  // อาจเข้าสภาวะใกล้ตาย (dealDamage broadcast ให้แล้ว)
+        return { ok: true };
+      }
+      case 'huatuo': {  // ถุงยาเขียว (青囊)
+        const card = player.hand.find(c => c.id === payload.cardId);
+        if (!card) return { ok: false, msg: 'เลือกไพ่ที่จะทิ้ง 1 ใบ' };
+        const target = this.room.players.find(p => p.id === payload.targetId && p.hp > 0);
+        if (!target) return { ok: false, msg: 'เลือกเป้าหมายที่จะรักษา' };
+        if (target.hp >= target.maxHp) return { ok: false, msg: 'เป้าหมายพลังชีวิตเต็มแล้ว' };
+        player.hand = player.hand.filter(c => c.id !== card.id);
+        this.discardPile.push(card);
+        target.hp = Math.min(target.maxHp, target.hp + 1);
+        player.skillUsed.qingnang = true;
+        this.addLog(player.username, `💚 ถุงยาเขียว — รักษา ${target.username} +1 พลังชีวิต`);
+        break;
+      }
+      default: return { ok: false, msg: 'ยังไม่รองรับทักษะนี้' };
+    }
+    this.broadcast();
+    return { ok: true };
+  }
+
   // ─── เริ่มรอบของผู้เล่นปัจจุบัน (6 เฟสตามคู่มือ) ──────────────────────────────
   runTurn() {
     const players = this.room.players;
     const cur = players[this.currentPlayer];
     cur.attacksThisTurn = 0;
+    cur.skillUsed = {};   // รีเซ็ตการใช้ทักษะ (แบบครั้งเดียวต่อตา) ของผู้เล่นคนนี้
     this.turn++;
 
     // 1) เตรียมรบ
@@ -519,6 +612,12 @@ class Game {
     if (cardIdx === -1) return { ok: false, msg: 'ไม่พบการ์ดในมือ' };
 
     const card = cur.hand[cardIdx];
+
+    // ── ตรวจเงื่อนไขการเล่นการ์ด ──
+    if (RESPONSE_ONLY_CARDS.includes(card.name))
+      return { ok: false, msg: `การ์ด${card.name} ใช้สำหรับตอบโต้เท่านั้น เล่นเชิงรุกไม่ได้` };
+    if (UNSUPPORTED_PLAY_CARDS.includes(card.name))
+      return { ok: false, msg: `การ์ด${card.name} เป็นการ์ดหน่วงเวลา (ต้องมีเฟสตัดสิน) — ฉบับนี้ยังไม่รองรับ` };
     const target = players.find(p => p.id === targetId);
 
     const result = this.applyCard(cur, card, target);
@@ -1090,6 +1189,16 @@ io.on('connection', (socket) => {
     const result = room.game.playCard(info.playerId, cardId, targetId);
     if (!result.ok) return socket.emit('error', result.msg);
     // Game.playCard เรียก broadcast() ให้แล้ว
+  });
+
+  // ใช้ทักษะสั่งใช้ของตัวละคร
+  socket.on('useSkill', ({ payload }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    const result = room.game.useSkill(info.playerId, payload || {});
+    if (!result.ok) return socket.emit('error', result.msg);
   });
 
   // ตอบโต้: เล่นการ์ดหลบหลีก/โจมตี เพื่อตอบสนอง (หรือไม่ตอบโต้ถ้า cardId = null)
