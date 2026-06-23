@@ -37,7 +37,7 @@ const CARD_TEMPLATES = [
   // ── การ์ดพื้นฐาน (Basic) 53 ใบ ──
   { name: 'Attack',  type: 'basic', count: 30 },              // โจมตี 杀
   { name: 'Dodge',   type: 'basic', count: 15 },              // หลบหลีก 闪
-  { name: 'Peach',   type: 'basic', count: 1,  redOnly: true },// เพอช 桃 (ไพ่แดงเสมอ)
+  { name: 'Peach',   type: 'basic', count: 8,  redOnly: true },// เพอช 桃 (ไพ่แดงเสมอ)
   // ── การ์ดกล (Stratagem/Trick) ──
   { name: 'Something Out of Nothing', type: 'stratagem', count: 4 },  // 无中生有
   { name: 'Duel',                     type: 'stratagem', count: 3 },  // 决斗
@@ -302,6 +302,12 @@ class Room {
         currentPlayer: g.currentPlayer,
         phase: g.phase,
         awaitingDraw: !!g.awaitingDraw,
+        awaitingDiscard: g.awaitingDiscard ? { playerId: g.awaitingDiscard.playerId, need: g.awaitingDiscard.need } : null,
+        harvest: g.harvest ? {
+          picker: g.harvest.order[g.harvest.idx] || null,
+          revealed: g.harvest.revealed.map(c => ({ id: c.id, name: c.name, type: c.type, suit: c.suit, rank: c.rank, color: c.color })),
+          remaining: g.harvest.order.length - g.harvest.idx,
+        } : null,
         deckSize: g.deck.length,
         discardTop: g.discardPile.slice(-1)[0] || null,
         discardCount: g.discardPile.length,
@@ -419,6 +425,9 @@ class Game {
     this.currentPlayer = 0;
     this.phase = 'start';
     this.awaitingDraw = false;
+    this.awaitingDiscard = null;   // { playerId, need } — รอผู้เล่นเลือกการ์ดทิ้งตอนจบตา
+    this.harvest = null;           // { revealed:[], order:[playerId], idx } — เก็บเกี่ยวอุดมสมบูรณ์
+    this.harvestTimer = null;
     this.log = [];
     this.timer = null;
     this.timerInterval = null;
@@ -629,6 +638,7 @@ class Game {
         // ถ้ายังไม่จั่ว ให้จั่วอัตโนมัติแล้วเข้าเฟสเล่น; ไม่งั้นจบตา
         if (this.pending) this.resolveResponse(this.pending.responderId, null);
         else if (this.awaitingDraw) this.playerDraw(this.room.players[this.currentPlayer].id, true);
+        else if (this.awaitingDiscard) this.autoDiscard();
         else this.endTurn(this.room.players[this.currentPlayer].id);
       }
       io.to(this.room.code).emit('timerTick', this.timer);
@@ -640,6 +650,7 @@ class Game {
     const players = this.room.players;
     const cur = players[this.currentPlayer];
     if (this.pending) return { ok: false, msg: 'กำลังรอการตอบโต้อยู่' };
+    if (this.harvest) return { ok: false, msg: 'กำลังเก็บเกี่ยว — รอเลือกไพ่ให้ครบก่อน' };
     if (cur.id !== playerId) return { ok: false, msg: 'ไม่ใช่ตาของคุณ' };
     if (this.phase !== 'play') return { ok: false, msg: 'ยังไม่ถึงเฟสเล่นการ์ด' };
 
@@ -768,10 +779,22 @@ class Game {
       }
 
       case 'Bumper Harvest': {
-        this.room.players.filter(p => p.hp > 0).forEach(p => {
-          p.hand.push(...this.drawCards(1));
-        });
-        return { ok: true, logMsg: `🌾 เก็บเกี่ยวอุดมสมบูรณ์ — ทุกคนจั่ว 1 ใบ` };
+        // เปิดไพ่จากกองตามจำนวนผู้เล่นที่ยังมีชีวิต แล้วผลัดกันเลือกเก็บคนละ 1 ใบ
+        // เริ่มจากผู้ใช้ แล้วไล่ตามลำดับที่นั่ง
+        const startIdx = this.room.players.indexOf(from);
+        const order = [];
+        for (let i = 0; i < this.room.players.length; i++) {
+          const p = this.room.players[(startIdx + i) % this.room.players.length];
+          if (p.hp > 0) order.push(p.id);
+        }
+        const revealed = this.drawCards(order.length);
+        if (revealed.length === 0) {
+          return { ok: true, logMsg: `🌾 เก็บเกี่ยวอุดมสมบูรณ์ — แต่กองไพ่หมด ไม่มีอะไรให้เก็บ` };
+        }
+        this.harvest = { revealed, order, idx: 0 };
+        this.addLog(from.username, `🌾 เก็บเกี่ยวอุดมสมบูรณ์ — เปิดไพ่ ${revealed.length} ใบ ผลัดกันเลือกเก็บ`);
+        this.promptHarvest();
+        return { ok: true, logMsg: null };
       }
 
       case 'Oath of the Peach Garden': {
@@ -814,6 +837,70 @@ class Game {
       }
     }
     return null;
+  }
+
+  // ─── เก็บเกี่ยวอุดมสมบูรณ์ (五谷丰登) — ผลัดกันเลือกเก็บไพ่ที่เปิด ──────────────
+  promptHarvest() {
+    if (!this.harvest) return;
+    clearInterval(this.harvestTimer);
+    // ข้ามผู้เล่นที่ตายไปแล้ว / จบเมื่อไม่มีไพ่เหลือหรือเลือกครบทุกคน
+    while (this.harvest.idx < this.harvest.order.length && this.harvest.revealed.length > 0) {
+      const pid = this.harvest.order[this.harvest.idx];
+      const player = this.room.players.find(p => p.id === pid);
+      if (!player || player.hp <= 0) { this.harvest.idx++; continue; }
+      // ถามผู้เล่นคนนี้ให้เลือกเก็บ 1 ใบ
+      this.timer = 20;
+      this.harvestTimer = setInterval(() => {
+        this.timer--;
+        io.to(this.room.code).emit('timerTick', this.timer);
+        if (this.timer <= 0) { clearInterval(this.harvestTimer); this.autoHarvestPick(); }
+      }, 1000);
+      const sock = io.sockets.sockets.get(player.socketId);
+      if (sock) sock.emit('askHarvest', {});
+      this.broadcast();
+      return;
+    }
+    this.finishHarvest();
+  }
+
+  harvestPick(playerId, cardId) {
+    if (!this.harvest) return { ok: false, msg: 'ตอนนี้ไม่มีการเก็บเกี่ยว' };
+    if (this.harvest.order[this.harvest.idx] !== playerId) return { ok: false, msg: 'ยังไม่ถึงตาคุณเลือก' };
+    const ci = this.harvest.revealed.findIndex(c => c.id === cardId);
+    if (ci < 0) return { ok: false, msg: 'การ์ดนั้นถูกเลือกไปแล้ว' };
+    const player = this.room.players.find(p => p.id === playerId);
+    const picked = this.harvest.revealed.splice(ci, 1)[0];
+    player.hand.push(picked);
+    this.addLog(player.username, `🌾 เลือกเก็บ ${picked.name}`);
+    clearInterval(this.harvestTimer);
+    this.harvest.idx++;
+    this.promptHarvest();
+    return { ok: true };
+  }
+
+  // หมดเวลา → เลือกใบแรกที่เหลืออัตโนมัติ
+  autoHarvestPick() {
+    if (!this.harvest || this.harvest.revealed.length === 0) return this.finishHarvest();
+    const pid = this.harvest.order[this.harvest.idx];
+    const player = this.room.players.find(p => p.id === pid);
+    if (player && player.hp > 0) {
+      const picked = this.harvest.revealed.shift();
+      player.hand.push(picked);
+      this.addLog(player.username, `🌾 เลือกเก็บ ${picked.name} (อัตโนมัติ — หมดเวลา)`);
+    }
+    this.harvest.idx++;
+    this.promptHarvest();
+  }
+
+  finishHarvest() {
+    clearInterval(this.harvestTimer);
+    if (this.harvest && this.harvest.revealed.length > 0) {
+      this.harvest.revealed.forEach(c => this.discardPile.push(c));
+    }
+    this.harvest = null;
+    // กลับสู่เฟสเล่นของผู้เล่นปัจจุบัน — เริ่มจับเวลาเล่นใหม่
+    if (this.phase === 'play') this.startTimer();
+    this.broadcast();
   }
 
   // ─── ระบบตอบโต้ (หลบหลีก / โต้ดวล) ──────────────────────────────────────────
@@ -1096,23 +1183,73 @@ class Game {
     const cur = players[this.currentPlayer];
     if (cur.id !== playerId && playerId !== '__timeout__') return;
     if (this.pending || this.dyingPlayerId) return; // ห้ามจบตาระหว่างรอตอบโต้
+    if (this.harvest) return; // กำลังเก็บเกี่ยวอยู่
     if (this.awaitingDraw) return; // ต้องจั่วการ์ดก่อนจึงจบตาได้
+    if (this.awaitingDiscard) return; // กำลังรอเลือกทิ้งการ์ดอยู่
     clearInterval(this.timerInterval);
 
     // 5) เฟสทิ้งการ์ด — เก็บการ์ดได้ไม่เกินพลังชีวิตปัจจุบัน (ตามคู่มือ)
-    this.phase = 'discard';
     const handLimit = Math.max(0, cur.hp);
+    const need = cur.hand.length - handLimit;
+    if (need > 0) {
+      // ให้ผู้เล่นเลือกการ์ดที่จะทิ้งเอง (ไม่สุ่ม) — รอการตอบกลับก่อนจบตา
+      this.phase = 'discard';
+      this.awaitingDiscard = { playerId: cur.id, need };
+      this.addLog(cur.username, `ต้องทิ้งการ์ด ${need} ใบ (เก็บได้ ${handLimit} = พลังชีวิต) — เลือกใบที่จะทิ้ง`);
+      const sock = io.sockets.sockets.get(cur.socketId);
+      if (sock) sock.emit('askDiscard', { need, handLimit });
+      this.startTimer();
+      this.broadcast();
+      return;
+    }
+    this.finishTurn();
+  }
+
+  // ผู้เล่นเลือกการ์ดที่จะทิ้งเองตอนจบตา
+  discardCards(playerId, cardIds) {
+    if (!this.awaitingDiscard || this.awaitingDiscard.playerId !== playerId) {
+      return { ok: false, msg: 'ตอนนี้ไม่ต้องทิ้งการ์ด' };
+    }
+    const player = this.room.players.find(p => p.id === playerId);
+    if (!player) return { ok: false, msg: 'ไม่พบผู้เล่น' };
+    const need = this.awaitingDiscard.need;
+    const ids = [...new Set(cardIds || [])];
+    if (ids.length !== need) return { ok: false, msg: `ต้องเลือกทิ้งให้ครบ ${need} ใบ` };
+    const toDiscard = ids.map(id => player.hand.find(c => c.id === id)).filter(Boolean);
+    if (toDiscard.length !== need) return { ok: false, msg: 'มีการ์ดที่ไม่ได้อยู่ในมือ' };
+    toDiscard.forEach(c => {
+      player.hand.splice(player.hand.indexOf(c), 1);
+      this.discardPile.push(c);
+    });
+    this.addLog(player.username, `ทิ้งการ์ด ${need} ใบ`);
+    this.awaitingDiscard = null;
+    this.finishTurn();
+    return { ok: true };
+  }
+
+  // ทิ้งให้อัตโนมัติเมื่อหมดเวลา (สุ่มจากท้ายมือ) — ใช้เฉพาะกรณีไม่ตอบในเวลา
+  autoDiscard() {
+    if (!this.awaitingDiscard) return;
+    const player = this.room.players.find(p => p.id === this.awaitingDiscard.playerId);
+    if (!player) { this.awaitingDiscard = null; return this.finishTurn(); }
+    const need = this.awaitingDiscard.need;
     let discarded = 0;
-    while (cur.hand.length > handLimit) {
-      this.discardPile.push(cur.hand.pop());
+    while (discarded < need && player.hand.length > 0) {
+      this.discardPile.push(player.hand.pop());
       discarded++;
     }
-    if (discarded > 0) this.addLog(cur.username, `ทิ้งการ์ด ${discarded} ใบ (เก็บได้ ${handLimit} = พลังชีวิต)`);
-    // 6) เฟสสิ้นสุด
+    if (discarded > 0) this.addLog(player.username, `ทิ้งการ์ด ${discarded} ใบ (อัตโนมัติ — หมดเวลา)`);
+    this.awaitingDiscard = null;
+    this.finishTurn();
+  }
+
+  // เฟสสิ้นสุด + ส่งตาให้ผู้เล่นคนถัดไปที่ยังมีชีวิต
+  finishTurn() {
+    const players = this.room.players;
+    const cur = players[this.currentPlayer];
     this.phase = 'end';
     this.addLog(cur.username, `จบตา (เหลือไพ่ ${cur.hand.length} ใบ)`);
 
-    // หาผู้เล่นคนถัดไปที่ยังมีชีวิต
     let next = (this.currentPlayer + 1) % players.length;
     let tries = 0;
     while (players[next].hp <= 0 && tries < players.length) {
@@ -1365,6 +1502,26 @@ io.on('connection', (socket) => {
     const room = rooms.get(info.roomCode);
     if (!room || !room.game) return;
     room.game.endTurn(info.playerId);
+  });
+
+  // ผู้เล่นเลือกการ์ดที่จะทิ้งเองตอนจบตา (เกินลิมิตมือ)
+  socket.on('discardCards', ({ cardIds }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    const result = room.game.discardCards(info.playerId, cardIds || []);
+    if (result && !result.ok && result.msg) socket.emit('error', result.msg);
+  });
+
+  // เก็บเกี่ยวอุดมสมบูรณ์: เลือกเก็บไพ่ที่เปิด 1 ใบ
+  socket.on('harvestPick', ({ cardId }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    const result = room.game.harvestPick(info.playerId, cardId);
+    if (result && !result.ok && result.msg) socket.emit('error', result.msg);
   });
 
   socket.on('sendChat', ({ message }) => {

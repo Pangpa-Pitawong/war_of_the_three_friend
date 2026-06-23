@@ -270,6 +270,17 @@ socket.on('askPeach', ({ msg }) => {
   openPeachModal(msg);
 });
 
+// ตอนจบตา: มือเกินลิมิต → เลือกการ์ดที่จะทิ้งเอง (ไม่สุ่ม)
+socket.on('askDiscard', ({ need }) => {
+  openDiscardModal(need);
+});
+
+// เก็บเกี่ยวอุดมสมบูรณ์: ถึงตาเราเลือกเก็บไพ่ที่เปิด
+socket.on('askHarvest', () => {
+  notify('🌾 ถึงตาคุณเลือกเก็บไพ่ — เลือก 1 ใบ', 'info', 3000);
+  openHarvestModal();
+});
+
 socket.on('error', (msg) => notify(msg, 'error'));
 socket.on('kicked', ({ reason }) => {
   notify(reason, 'error', 5000);
@@ -707,7 +718,7 @@ function renderGame() {
       discardTopImg.style.display = 'none';
     }
     // อัปเดตหน้าต่างกองทิ้งถ้ากำลังเปิดดูอยู่
-    if (document.getElementById('modal-discard')?.classList.contains('active')) openDiscardModal();
+    if (document.getElementById('modal-discard')?.classList.contains('active')) openDiscardPileModal();
     if (game.timer !== null) {
       document.getElementById('timer-display').textContent = game.timer;
     }
@@ -726,7 +737,7 @@ function renderGame() {
   if (me) renderHand(me);
 
   // End turn button visibility
-  const isMyTurn = game && players[game.currentPlayer]?.id === STATE.playerId && game.phase === 'play' && !game.pending;
+  const isMyTurn = game && players[game.currentPlayer]?.id === STATE.playerId && game.phase === 'play' && !game.pending && !game.harvest;
   document.getElementById('btn-end-turn').style.display = isMyTurn ? 'block' : 'none';
   document.getElementById('btn-cancel-target').style.display = STATE.selectingTarget ? 'block' : 'none';
 
@@ -771,9 +782,17 @@ function renderGame() {
   const respOverlay = document.getElementById('modal-response');
   const pendingForMe = game?.pending && game.pending.responderId === STATE.playerId;
   const dyingMe = game?.dyingPlayerId === STATE.playerId;
-  if (!pendingForMe && !dyingMe && respOverlay.classList.contains('active')) {
+  const discardForMe = game?.awaitingDiscard && game.awaitingDiscard.playerId === STATE.playerId;
+  const harvestForMe = game?.harvest && game.harvest.picker === STATE.playerId;
+  if (!pendingForMe && !dyingMe && !discardForMe && !harvestForMe && respOverlay.classList.contains('active')) {
     respOverlay.classList.remove('active');
   }
+  // เปิดหน้าต่างเลือกทิ้งการ์ดถ้ายังค้างอยู่ (ครอบคลุมกรณี reconnect)
+  if (discardForMe && !STATE._discardOpen) openDiscardModal(game.awaitingDiscard.need);
+  if (!discardForMe) STATE._discardOpen = false;
+  // เปิด/อัปเดตหน้าต่างเก็บเกี่ยวเมื่อถึงตาเราเลือก (รวมถึงอัปเดตไพ่ที่เหลือ)
+  if (harvestForMe) openHarvestModal();
+  else STATE._harvestOpen = false;
 }
 
 // เป้าหมายที่เลือกได้ตามชนิดการ์ด + ระยะ
@@ -816,7 +835,7 @@ function renderHand(me) {
 
   const game = STATE.room?.game;
   const players = STATE.room?.players || [];
-  const myTurn = game && players[game.currentPlayer]?.id === STATE.playerId && game.phase === 'play' && !game.pending;
+  const myTurn = game && players[game.currentPlayer]?.id === STATE.playerId && game.phase === 'play' && !game.pending && !game.harvest;
 
   hand.forEach(card => {
     const cd = window.CARD_DATA[card.name];
@@ -851,6 +870,7 @@ function onCardClick(card) {
   const players = room?.players || [];
   const isMyTurn = game && players[game.currentPlayer]?.id === STATE.playerId && game.phase === 'play';
   if (!isMyTurn) { notify('ยังไม่ใช่ตาของคุณ', 'error'); return; }
+  if (game.harvest) { notify('กำลังเก็บเกี่ยว — รอเลือกไพ่ให้ครบก่อน', 'error'); return; }
 
   // ตรวจเงื่อนไขการเล่นการ์ดก่อน
   const issue = cardPlayIssue(card);
@@ -988,8 +1008,99 @@ function openPeachModal(msg) {
   });
 }
 
+// ─── Discard Modal (จบตา: เลือกการ์ดที่จะทิ้งเอง ไม่สุ่ม) ──────────────────────
+function openDiscardModal(need) {
+  STATE._discardOpen = true;
+  STATE.discardSelected = [];
+  const overlay = document.getElementById('modal-response');
+
+  function render() {
+    const me = STATE.room?.players.find(p => p.id === STATE.playerId);
+    const hand = me?.hand || [];
+    const sel = STATE.discardSelected;
+    const cardsHTML = hand.map(c => {
+      const cd = window.CARD_DATA[c.name];
+      const isSel = sel.includes(c.id);
+      return `<div class="resp-card ${isSel ? 'discard-sel' : ''}" data-cardid="${c.id}">
+        <img src="${cd?.image||''}" onerror="this.style.display='none'">
+        ${suitPip(c)}
+      </div>`;
+    }).join('');
+    const enough = sel.length === need;
+    overlay.innerHTML = `
+      <div class="modal gold-frame" style="width:min(520px,92vw)">
+        <h2 style="color:#f39c12">🗑️ ทิ้งการ์ดตอนจบตา</h2>
+        <div style="text-align:center;color:var(--text);margin-bottom:8px;line-height:1.6">
+          มือเกินลิมิต — เลือกการ์ดที่จะทิ้ง <b>${need}</b> ใบ (เก็บได้เท่าพลังชีวิต)
+        </div>
+        <div style="color:var(--text-dim);font-size:0.85rem;text-align:center;margin-bottom:10px">เลือกแล้ว ${sel.length}/${need}</div>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:16px" id="discard-cards">${cardsHTML}</div>
+        <button class="btn btn-confirm" id="discard-confirm" style="width:100%;opacity:${enough?'1':'0.5'};cursor:${enough?'pointer':'not-allowed'}">
+          🗑️ ทิ้งการ์ด ${sel.length}/${need} ใบ
+        </button>
+      </div>`;
+    overlay.classList.add('active');
+
+    overlay.querySelectorAll('.resp-card').forEach(el => {
+      const c = hand.find(h => h.id === el.dataset.cardid);
+      if (c) addTooltipHover(el, () => cardTooltipHTML(c.name));
+      el.addEventListener('click', () => {
+        const id = el.dataset.cardid;
+        const i = sel.indexOf(id);
+        if (i >= 0) sel.splice(i, 1);
+        else if (sel.length >= need) { notify(`เลือกทิ้งได้แค่ ${need} ใบ`, 'error'); return; }
+        else sel.push(id);
+        render();
+      });
+    });
+    document.getElementById('discard-confirm').addEventListener('click', () => {
+      if (sel.length !== need) { notify(`เลือกการ์ดให้ครบ ${need} ใบก่อน`, 'error'); return; }
+      socket.emit('discardCards', { cardIds: [...sel] });
+      overlay.classList.remove('active');
+      STATE._discardOpen = false;
+    });
+  }
+  render();
+}
+
+// ─── Harvest Modal (เก็บเกี่ยวอุดมสมบูรณ์: เลือกเก็บไพ่ที่เปิด 1 ใบ) ────────────
+function openHarvestModal() {
+  STATE._harvestOpen = true;
+  const overlay = document.getElementById('modal-response');
+  const g = STATE.room?.game;
+  const revealed = g?.harvest?.revealed || [];
+  const cardsHTML = revealed.map(c => {
+    const cd = window.CARD_DATA[c.name];
+    return `<div class="resp-card" data-cardid="${c.id}">
+      <img src="${cd?.image||''}" onerror="this.style.display='none'">
+      ${suitPip(c)}
+    </div>`;
+  }).join('') || `<div style="color:var(--text-dim);font-size:0.85rem;padding:12px">ไม่มีไพ่เหลือให้เลือก</div>`;
+
+  overlay.innerHTML = `
+    <div class="modal gold-frame" style="width:min(560px,92vw)">
+      <h2 style="color:#27ae60">🌾 เก็บเกี่ยวอุดมสมบูรณ์</h2>
+      <div style="text-align:center;color:var(--text);margin-bottom:8px;line-height:1.6">
+        ถึงตาคุณ — เลือกเก็บการ์ด <b>1</b> ใบจากไพ่ที่เปิด
+      </div>
+      <div style="color:var(--text-dim);font-size:0.8rem;text-align:center;margin-bottom:10px">เหลือ ${revealed.length} ใบ</div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:6px" id="harvest-cards">${cardsHTML}</div>
+    </div>`;
+  overlay.classList.add('active');
+
+  overlay.querySelectorAll('.resp-card').forEach(el => {
+    const c = revealed.find(r => r.id === el.dataset.cardid);
+    if (c) addTooltipHover(el, () => cardTooltipHTML(c.name));
+    el.addEventListener('click', () => {
+      socket.emit('harvestPick', { cardId: el.dataset.cardid });
+      overlay.classList.remove('active');
+      STATE._harvestOpen = false;
+    });
+  });
+}
+
 // ─── Discard Pile Viewer (กองทิ้ง) ───────────────────────────────────────────
-function openDiscardModal() {
+function openDiscardPileModal() {
   const g = STATE.room?.game;
   const list = (g?.discard) || [];
   const cont = document.getElementById('discard-modal-list');
@@ -1228,7 +1339,7 @@ document.getElementById('btn-confirm-draft')?.addEventListener('click', () => {
 });
 
 // ─── เปิดดูกองทิ้ง ─────────────────────────────────────────────────────────
-document.getElementById('discard-pile')?.addEventListener('click', openDiscardModal);
+document.getElementById('discard-pile')?.addEventListener('click', openDiscardPileModal);
 
 // ─── กดกองไพ่เพื่อจั่วการ์ดเอง (เฟสจั่ว) ────────────────────────────────────────
 document.getElementById('deck-pile')?.addEventListener('click', () => {
