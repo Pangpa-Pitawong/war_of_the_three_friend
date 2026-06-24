@@ -178,6 +178,8 @@ const CHAR_PASSIVES = {
   lvbu:     { needsTwoDodge: true },        // Wu Shuang (无双): เป้าต้องหลบ 2 ใบ
   luxun:    { immuneToSteal: true,          // Qian Xun (谦逊): ขโมย/เบี่ยงเบนไม่ได้
                immuneToOverindulgence: true },
+  huangyy:  { unlimitedTrickRange: true,    // Qi Cai (奇才): การ์ดยุทธวิธีของคุณมีระยะไม่จำกัด
+               jizhi: true },               // Ji Zhi (集智): จั่ว 1 ใบหลังใช้การ์ดยุทธวิธี
 };
 
 // ─── Roles by player count (ตรงตามตารางในคู่มือ — สามก๊กฉบับมาตรฐาน) ──────────────
@@ -677,6 +679,14 @@ class Game {
       this.discardPile.push(card);
     }
     if (result.logMsg) this.addLog(cur.username, result.logMsg);
+    // ─── Huang Yueying (黄月英) — Ji Zhi (集智): จั่ว 1 ใบหลังใช้การ์ดยุทธวิธี ───
+    if (CHAR_PASSIVES[cur.character]?.jizhi && card.type === 'stratagem') {
+      const drawn = this.drawCards(1);
+      if (drawn.length) {
+        cur.hand.push(...drawn);
+        this.addLog(cur.username, `📘 [บ่มเพาะปัญญา/集智] ใช้การ์ดยุทธวิธี — จั่ว 1 ใบ`);
+      }
+    }
     this.broadcast();
     return { ok: true };
   }
@@ -742,7 +752,8 @@ class Game {
         if (target.id === from.id) return { ok: false, msg: 'เลือกตัวเองไม่ได้' };
         if (CHAR_PASSIVES[target.character]?.immuneToSteal)
           return { ok: false, msg: `${target.username} ไม่สามารถถูกขโมยได้ (ลู่ซุ่น: ศักดิ์ศรีแห่งน้ำ)` };
-        if (this.distance(from, target) > 1) return { ok: false, msg: 'เป้าหมายต้องอยู่ในระยะ 1' };
+        if (!CHAR_PASSIVES[from.character]?.unlimitedTrickRange && this.distance(from, target) > 1)
+          return { ok: false, msg: 'เป้าหมายต้องอยู่ในระยะ 1' };
         const loot = this.takeOneCard(target);
         if (!loot) return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
         from.hand.push(loot);
@@ -752,7 +763,8 @@ class Game {
       case 'Burning Bridges': {
         if (!target) return { ok: false, msg: 'ต้องเลือกเป้าหมาย' };
         if (target.id === from.id) return { ok: false, msg: 'เลือกตัวเองไม่ได้' };
-        if (this.distance(from, target) > 1) return { ok: false, msg: 'เป้าหมายต้องอยู่ในระยะ 1' };
+        if (!CHAR_PASSIVES[from.character]?.unlimitedTrickRange && this.distance(from, target) > 1)
+          return { ok: false, msg: 'เป้าหมายต้องอยู่ในระยะ 1' };
         const removed = this.takeOneCard(target);
         if (!removed) return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
         this.discardPile.push(removed);

@@ -513,12 +513,14 @@ html, body {
   /* ขนาดรูปตัวละครแบบยืดหยุ่นตามจอ — ใหญ่ชัดบนจอใหญ่ อ่านออกบนจอเล็ก */
   --pw: clamp(64px, 6.5vw, 100px);
   position: absolute;
+  /* จุดศูนย์กลางของ node อยู่ตรงพิกัดที่ JS กำหนด (กันเนื้อหาล้นไปทับกองไพ่กลางโต๊ะ) */
+  transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center;
   gap: 4px;
   cursor: pointer;
   transition: transform 0.2s;
 }
-.player-node:hover { transform: scale(1.05); z-index: 6; }
+.player-node:hover { transform: translate(-50%, -50%) scale(1.05); z-index: 6; }
 .player-node.current-turn { filter: drop-shadow(0 0 8px var(--gold)); }
 .player-node.dead { opacity: 0.35; filter: grayscale(1); }
 
@@ -1090,8 +1092,25 @@ html, body {
   .menu-logo h1 { font-size: 1.4rem; }
 }
 
+/* จอเตี้ย (โน้ตบุ๊ก): ย่อ node + กองไพ่กลาง ให้ผู้เล่นบน/ล่างไม่ทับกองไพ่ตรงกลาง */
+@media (max-height: 820px) {
+  .player-node { --pw: clamp(44px, 8.2vh, 70px); gap: 2px; }
+  .hp-hearts { gap: 1px; }
+  .player-node-name { font-size: 0.66rem; }
+  .player-hp-text { font-size: 0.6rem; }
+  .player-equip { gap: 2px; margin-top: 1px; }
+  .equip-card { width: clamp(18px, 1.9vw, 26px); }
+  .board-center { gap: 6px; width: 170px; height: auto; }
+  .pile-group { gap: 10px; }
+  .card-pile { width: clamp(44px, 5.4vh, 62px); height: clamp(60px, 7.6vh, 86px); }
+  .card-pile-label { font-size: 0.58rem; margin-top: 2px; }
+  .timer-ring { width: 38px; height: 38px; font-size: 0.9rem; }
+  .turn-player { font-size: 0.72rem; }
+  .turn-phase { font-size: 0.58rem; }
+}
+
 /* อุปกรณ์สัมผัส: เป้ากดใหญ่ขึ้น, ปิด hover-lift ที่กวนใจ */
 @media (hover: none) {
   .hand-card:hover { transform: none; }
-  .player-node:hover { transform: none; }
+  .player-node:hover { transform: translate(-50%, -50%); }
 }

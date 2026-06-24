@@ -621,17 +621,13 @@ function renderGame() {
   const ring = document.getElementById('players-ring');
   const cx = ring.clientWidth / 2 || 500;
   const cy = ring.clientHeight / 2 || 300;
-  const rx = Math.min(cx - 80, 340);
-  const ry = Math.min(cy - 80, 240);
-
   // ลบเฉพาะการ์ดผู้เล่นเดิม (คงไว้ซึ่ง board-center)
   ring.querySelectorAll('.player-node').forEach(n => n.remove());
 
   const myIdx = players.findIndex(p => p.id === STATE.playerId);
+  const placed = [];   // เก็บ {node, angle} ไว้คำนวณรัศมีหลังวัดขนาด node จริง
   players.forEach((p, i) => {
     const angle = ((i - myIdx) / players.length) * Math.PI * 2 - Math.PI / 2;
-    const x = cx + rx * Math.cos(angle) - 42;
-    const y = cy + ry * Math.sin(angle) - 56;
 
     const isCurrent = game?.currentPlayer === i;
     const dead = p.hp <= 0;
@@ -653,8 +649,6 @@ function renderGame() {
     node.className = `player-node ${isCurrent ? 'current-turn' : ''} ${dead ? 'dead' : ''} ${isSelf ? 'self' : ''}`;
     if (targetable) node.classList.add('targetable');
     if (STATE.selectingTarget && !isSelf && !dead && !targetable) node.style.opacity = '0.4';
-    node.style.left = x + 'px';
-    node.style.top = y + 'px';
     node.dataset.playerid = p.id;
     // ป้ายระยะทาง (เมื่อเลือกเป้าหมาย)
     const distBadge = (STATE.selectingTarget && !isSelf && !dead && p.distance != null)
@@ -699,6 +693,17 @@ function renderGame() {
     });
 
     ring.appendChild(node);
+    placed.push({ node, angle });
+  });
+
+  // ── วัดขนาด node จริงหลัง render แล้วคำนวณรัศมีให้ขอบบนของ node บนสุดชิดขอบวง
+  //    (ดันออกให้ไกลกองไพ่กลางโต๊ะมากสุด) และไม่ล้นขอบซ้าย/ขวา ───────────────────
+  let maxW = 0, maxH = 0;
+  placed.forEach(({ node }) => { maxW = Math.max(maxW, node.offsetWidth); maxH = Math.max(maxH, node.offsetHeight); });
+  const radius = Math.max(110, Math.min(cx - maxW / 2 - 8, cy - maxH / 2 - 6));
+  placed.forEach(({ node, angle }) => {
+    node.style.left = (cx + radius * Math.cos(angle)) + 'px';
+    node.style.top  = (cy + radius * Math.sin(angle)) + 'px';
   });
 
   // Update turn info
