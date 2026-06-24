@@ -654,13 +654,11 @@ class Game {
         this.addLog(victim.username, `🦅 [เล่ห์กล/奸雄] ริบการ์ด "${taken.name}" ที่ก่อความเสียหาย`);
       }
     }
-    // ซือหม่าอี้ (司马懿) — Fan Kui (反馈): ริบการ์ด 1 ใบจากผู้ก่อความเสียหาย
-    if (CHAR_PASSIVES[victim.character]?.fankui && source && source.id !== victim.id) {
-      const loot = this.takeOneCard(source, true);
-      if (loot) {
-        victim.hand.push(loot);
-        this.addLog(victim.username, `🔄 [การโต้กลับ/反馈] ริบ "${loot.name}" จาก ${source.username}`);
-      }
+    // ซือหม่าอี้ (司马懿) — Fan Kui (反馈): "เลือก" ริบการ์ด 1 ใบจากผู้ก่อความเสียหาย
+    if (CHAR_PASSIVES[victim.character]?.fankui && source && source.id !== victim.id
+        && (source.hand.length > 0 || Object.values(source.equipment).some(Boolean))) {
+      this.addLog(victim.username, `🔄 [การโต้กลับ/反馈] เลือกริบการ์ด 1 ใบจาก ${source.username}`);
+      this._promptTakeCard(victim, source, 'steal');
     }
     // กัวเจีย (郭嘉) — Yi Ji (遗计): โดนดาเมจ → ดูไพ่ 2 ใบบนสุด/หน่วย (auto: เก็บเอง)
     if (CHAR_PASSIVES[victim.character]?.yiji) {
@@ -670,7 +668,7 @@ class Game {
         this.addLog(victim.username, `📜 [มรดกตกทอด/遗计] โดน ${amount} ดาเมจ — ดูและเก็บไพ่ ${drawn.length} ใบ`);
       }
     }
-    // เซี่ยโหวตุน (夏侯惇) — Gang Lie (刚烈): ตัดสิน ไม่ใช่ ♥ → ผู้ก่อทิ้ง 2 ใบ/รับ 1 ดาเมจ
+    // เซี่ยโหวตุน (夏侯惇) — Gang Lie (刚烈): ตัดสิน ไม่ใช่ ♥ → ผู้ก่อ "เลือก" ทิ้ง 2 ใบ/รับ 1 ดาเมจ
     if (CHAR_PASSIVES[victim.character]?.ganglie && source && source.id !== victim.id && source.hp > 0) {
       const flip = this.drawCards(1)[0];
       this.emitJudgment(victim, flip, '🔥 ตัดสินความแน่วแน่');
@@ -678,13 +676,11 @@ class Game {
       const tag = flip ? `${flip.rank}${flip.suit}` : '—';
       if (flip && flip.suit !== '♥') {
         if (source.hand.length >= 2) {
-          const handBefore = source.hand.length;
-          const lost = [source.hand.pop(), source.hand.pop()];
-          lost.forEach(c => this.discardPile.push(c));
-          this.addLog(victim.username, `🔥 [ความแน่วแน่/刚烈] เปิด ${tag} — ${source.username} ทิ้งการ์ด 2 ใบ`);
-          this.afterHandLoss(source, handBefore);
+          // ผู้ก่อความเสียหายเป็นผู้เลือกเอง → เปิดหน้าต่างให้ตัดสินใจ
+          this._promptGanglie(victim, source, tag);
         } else {
-          this.addLog(victim.username, `🔥 [ความแน่วแน่/刚烈] เปิด ${tag} — ${source.username} รับ 1 ดาเมจ`);
+          // มีไพ่ในมือไม่ถึง 2 ใบ → ไม่มีทางเลือก ต้องรับ 1 ดาเมจ
+          this.addLog(victim.username, `🔥 [ความแน่วแน่/刚烈] เปิด ${tag} — ${source.username} รับ 1 ดาเมจ (การ์ดในมือไม่พอให้ทิ้ง)`);
           this.dealDamage(source, 1, victim);
         }
       } else if (flip) {
@@ -1096,6 +1092,47 @@ class Game {
     this._stepJudgment(cur);   // เดินการ์ดตัดสินใบถัดไป
   }
 
+  // ─── เซี่ยโหวตุน Gang Lie (刚烈): เปิดหน้าต่างให้ "ผู้ก่อความเสียหาย" เลือกผลเอง ──────
+  _promptGanglie(victim, source, tag) {
+    this.ganglie = { victimId: victim.id, sourceId: source.id, tag };
+    this.addLog(victim.username, `🔥 [ความแน่วแน่/刚烈] เปิด ${tag} — ${source.username} ต้องเลือก: ทิ้งการ์ด 2 ใบ หรือ รับ 1 ดาเมจ`);
+    clearInterval(this.ganglieTimer);
+    this.timer = 20;
+    this.ganglieTimer = setInterval(() => {
+      this.timer--;
+      io.to(this.room.code).emit('timerTick', this.timer);
+      if (this.timer <= 0) { clearInterval(this.ganglieTimer); this.resolveGanglie(source.id, 'discard'); }
+    }, 1000);
+    const sock = io.sockets.sockets.get(source.socketId);
+    if (sock) sock.emit('askGanglie', { victimName: victim.username, tag });
+    this.broadcast();
+  }
+
+  // ผู้ก่อความเสียหายเลือกผล Gang Lie — choice: 'discard' (ทิ้ง 2 ใบ) | 'damage' (รับ 1 ดาเมจ)
+  resolveGanglie(playerId, choice) {
+    const g = this.ganglie;
+    if (!g || g.sourceId !== playerId) return { ok: false, msg: 'ไม่มีหน้าต่างความแน่วแน่ที่รออยู่' };
+    clearInterval(this.ganglieTimer);
+    this.ganglie = null;
+    const source = this.room.players.find(p => p.id === playerId);
+    const victim = this.room.players.find(p => p.id === g.victimId);
+    const vName = victim?.username || 'ระบบ';
+    if (!source || source.hp <= 0) return { ok: true };
+    // เลือกทิ้งการ์ดได้ก็ต่อเมื่อยังมีไพ่ในมือ ≥ 2 ใบ มิฉะนั้นบังคับรับดาเมจ
+    if (choice === 'discard' && source.hand.length >= 2) {
+      const handBefore = source.hand.length;
+      const lost = [source.hand.pop(), source.hand.pop()];
+      lost.forEach(c => this.discardPile.push(c));
+      this.addLog(vName, `🔥 [ความแน่วแน่/刚烈] ${source.username} เลือกทิ้งการ์ด 2 ใบ`);
+      this.afterHandLoss(source, handBefore);
+    } else {
+      this.addLog(vName, `🔥 [ความแน่วแน่/刚烈] ${source.username} เลือกรับ 1 ดาเมจ`);
+      this.dealDamage(source, 1, victim || null);
+    }
+    this.broadcast();
+    return { ok: true };
+  }
+
   // ─── แจ้งไคลเอนต์ให้เล่นอนิเมชั่น "เปิดไพ่ตัดสิน" ที่กองไพ่กลางกระดาน ──────────────
   emitJudgment(player, flip, label) {
     if (!flip) return;
@@ -1446,11 +1483,7 @@ class Game {
           return { ok: false, msg: 'เป้าหมายต้องอยู่ในระยะ 1' };
         if (target.hand.length === 0 && !Object.values(target.equipment).some(Boolean))
           return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
-        const doSteal = () => {
-          const loot = this.takeOneCard(target, true);
-          if (loot) { from.hand.push(loot); this.addLog(from.username, `🃏 ขโมยการ์ดจาก ${target.username}`); }
-          else this.addLog(from.username, `🃏 ขโมย ${target.username} — แต่ไม่มีการ์ดให้ริบแล้ว`);
-        };
+        const doSteal = () => this._promptTakeCard(from, target, 'steal');
         return this.maybeNegate(from, target, 'Steal', doSteal);
       }
 
@@ -1461,11 +1494,7 @@ class Game {
           return { ok: false, msg: 'เป้าหมายต้องอยู่ในระยะ 1' };
         if (target.hand.length === 0 && !Object.values(target.equipment).some(Boolean))
           return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
-        const doBurn = () => {
-          const removed = this.takeOneCard(target, true);
-          if (removed) { this.discardPile.push(removed); this.addLog(from.username, `🔥 ทำลายการ์ดของ ${target.username}`); }
-          else this.addLog(from.username, `🔥 ทำลายสะพาน ${target.username} — แต่ไม่มีการ์ดแล้ว`);
-        };
+        const doBurn = () => this._promptTakeCard(from, target, 'burn');
         return this.maybeNegate(from, target, 'Burning Bridges', doBurn);
       }
 
@@ -1577,6 +1606,92 @@ class Game {
       }
     }
     return null;
+  }
+
+  // ─── ตัวเลือกการ์ดของเป้าหมายสำหรับ ขโมย(顺手牵羊)/ทำลายสะพาน(过河拆桥) ──────────────
+  //   มือ = 1 ตัวเลือก (สุ่ม 1 ใบ เพราะคว่ำอยู่) · อุปกรณ์/ตัดสิน = แยกตามใบ (เปิดเผย)
+  _targetCardOptions(target) {
+    const opts = [];
+    if (target.hand.length > 0) opts.push({ value: 'hand', kind: 'hand', label: `🃏 ไพ่ในมือ (${target.hand.length} ใบ)` });
+    const slotIcon = { weapon: '🗡️ อาวุธ', armor: '🛡️ เกราะ', atkMount: '🐎 ม้าโจมตี', defMount: '🐴 ม้าป้องกัน' };
+    for (const slot of ['weapon','armor','atkMount','defMount']) {
+      if (target.equipment[slot]) opts.push({ value: `equip:${slot}`, kind: 'equip', slot, label: `${slotIcon[slot]}: ${target.equipment[slot].name}` });
+    }
+    (target.judgments || []).forEach(c => {
+      opts.push({ value: `judge:${c.id}`, kind: 'judge', cardId: c.id, label: `⏳ ช่องตัดสิน: ${c.name}` });
+    });
+    return opts;
+  }
+
+  // เปิดหน้าต่างให้ผู้ใช้ "เลือก" การ์ดของเป้าหมายที่จะขโมย/ทำลาย (mode: 'steal' | 'burn')
+  _promptTakeCard(from, target, mode) {
+    const options = this._targetCardOptions(target);
+    const verb = mode === 'steal' ? 'ขโมย' : 'ทำลาย';
+    if (options.length === 0) {
+      this.addLog(from.username, `${mode === 'steal' ? '🃏' : '🔥'} ${verb} ${target.username} — แต่ไม่มีการ์ดแล้ว`);
+      return;
+    }
+    if (options.length === 1) { this._applyTakeCard(from, target, mode, options[0]); return; }
+    this.cardPick = { fromId: from.id, targetId: target.id, mode, options };
+    clearInterval(this.cardPickTimer);
+    this.timer = 20;
+    this.cardPickTimer = setInterval(() => {
+      this.timer--;
+      io.to(this.room.code).emit('timerTick', this.timer);
+      if (this.timer <= 0) { clearInterval(this.cardPickTimer); this.resolveTakeCard(from.id, options[0].value); }
+    }, 1000);
+    const sock = io.sockets.sockets.get(from.socketId);
+    if (sock) sock.emit('askTakeCard', {
+      mode, targetName: target.username,
+      options: options.map(o => ({ value: o.value, label: o.label })),
+    });
+    this.broadcast();
+  }
+
+  resolveTakeCard(playerId, value) {
+    const cp = this.cardPick;
+    if (!cp || cp.fromId !== playerId) return { ok: false, msg: 'ไม่มีหน้าต่างเลือกการ์ดที่รออยู่' };
+    clearInterval(this.cardPickTimer);
+    this.cardPick = null;
+    const from = this.room.players.find(p => p.id === cp.fromId);
+    const target = this.room.players.find(p => p.id === cp.targetId);
+    if (!from || !target) return { ok: true };
+    const option = cp.options.find(o => o.value === value) || cp.options[0];
+    this._applyTakeCard(from, target, cp.mode, option);
+    this.broadcast();
+    return { ok: true };
+  }
+
+  // ริบการ์ดที่เลือกจริง — มือ=สุ่มในโซน, อุปกรณ์/ตัดสิน=ใบที่ระบุ
+  _applyTakeCard(from, target, mode, option) {
+    let taken = null;
+    if (option.kind === 'hand') {
+      if (target.hand.length > 0) {
+        const handBefore = target.hand.length;
+        taken = target.hand.splice(Math.floor(Math.random() * target.hand.length), 1)[0];
+        this.afterHandLoss(target, handBefore);
+      }
+    } else if (option.kind === 'equip') {
+      if (target.equipment[option.slot]) {
+        taken = target.equipment[option.slot];
+        target.equipment[option.slot] = null;
+        this.afterLoseEquip(target, 1);
+      }
+    } else if (option.kind === 'judge') {
+      const ji = (target.judgments || []).findIndex(c => c.id === option.cardId);
+      if (ji >= 0) taken = target.judgments.splice(ji, 1)[0];
+    }
+    if (!taken) {
+      this.addLog(from.username, `${mode === 'steal' ? '🃏 ขโมย' : '🔥 ทำลาย'} ${target.username} — แต่ไม่มีการ์ดแล้ว`);
+      return;
+    }
+    if (mode === 'steal') {
+      from.hand.push(taken);
+      this.addLog(from.username, `🃏 ขโมย "${taken.name}" จาก ${target.username}`);
+    } else {
+      this.discardPile.push(taken);
+      this.addLog(from.username, `🔥 ทำลาย "${taken.name}" ของ ${target.username}`);
+    }
   }
 
   // ─── เก็บเกี่ยวอุดมสมบูรณ์ (五谷丰登) — ผลัดกันเลือกเก็บไพ่ที่เปิด ──────────────
@@ -1695,6 +1810,16 @@ class Game {
     const canNegate = !!payload.negatable && responder.hand.some(c => c.name === 'Negation');
     if (canNegate) alsoAccept.push('Negation');
 
+    // ต้าเฉียว (大乔) — Liu Li (流离): ถูก [โจมตี] → ทิ้งไพ่ 1 ใบ "เลือก" โยกการโจมตีให้คนอื่นในระยะ
+    let liuliTargets = [];
+    if (type === 'dodge' && cardName === 'Attack'
+        && CHAR_PASSIVES[responder.character]?.liuli && responder.hand.length > 0) {
+      liuliTargets = this.room.players
+        .filter(p => p.hp > 0 && p.id !== responder.id && p.id !== source.id
+          && this.inAttackRange(responder, p) && !this.kongChengProtected(p))
+        .map(p => ({ id: p.id, name: p.username }));
+    }
+
     const need = (type === 'duel' || type === 'borrow' || type === 'avoidatk') ? 'Attack'
       : (type === 'negate') ? 'Negation' : 'Dodge';
     const msg = type === 'duel'   ? `${source.username} ท้าดวลคุณ! เล่นการ์ดโจมตี หรือเสีย 1 พลังชีวิต`
@@ -1708,8 +1833,36 @@ class Game {
       type, need, cardName, alsoAccept, canNegate,
       dodgesNeeded: payload.dodgesNeeded || 1,
       from: source.username, msg,
+      liuliTargets,
     });
     this.broadcast();
+  }
+
+  // ต้าเฉียว Liu Li (流离): ทิ้งไพ่ 1 ใบ โยก [โจมตี] ที่กำลังเผชิญไปยังเป้าหมายใหม่ในระยะ
+  resolveLiuli(responderId, cardId, targetId) {
+    const pend = this.pending;
+    if (!pend || pend.type !== 'dodge' || pend.responderId !== responderId)
+      return { ok: false, msg: 'ไม่มีหน้าต่างหลบที่รออยู่' };
+    const responder = this.room.players.find(p => p.id === responderId);
+    const source = this.room.players.find(p => p.id === pend.sourceId);
+    const newTarget = this.room.players.find(p => p.id === targetId);
+    if (!responder || !source || !newTarget) return { ok: false, msg: 'เป้าหมายไม่ถูกต้อง' };
+    if (!CHAR_PASSIVES[responder.character]?.liuli) return { ok: false, msg: 'ใช้เบี่ยงเบนไม่ได้' };
+    if (newTarget.id === responder.id || newTarget.id === source.id || newTarget.hp <= 0
+        || !this.inAttackRange(responder, newTarget) || this.kongChengProtected(newTarget))
+      return { ok: false, msg: 'เป้าหมายเบี่ยงเบนไม่ถูกต้อง' };
+    const ci = responder.hand.findIndex(c => c.id === cardId);
+    if (ci < 0) return { ok: false, msg: 'ไม่มีการ์ดที่จะทิ้ง' };
+    const handBefore = responder.hand.length;
+    const discarded = responder.hand.splice(ci, 1)[0];
+    this.discardPile.push(discarded);
+    this.addLog(responder.username, `🌀 [เบี่ยงเบน/流离] ทิ้ง "${discarded.name}" — โยกการโจมตีไปที่ ${newTarget.username}`);
+    clearInterval(this.respTimer);
+    this.pending = null;
+    this.afterHandLoss(responder, handBefore);
+    // เปิดหน้าต่างหลบให้เป้าหมายใหม่ด้วยบริบทการโจมตีเดิม
+    this.requestResponse('dodge', newTarget, source, 'Attack', pend.payload);
+    return { ok: true };
   }
 
   // ดำเนินเกมต่อหลังจบการตอบโต้ 1 ครั้ง (มีคิวกลุ่ม → คนต่อไป, ไม่งั้นกลับสู่เฟสเล่น)
@@ -1946,8 +2099,10 @@ class Game {
   dealDamage(player, amount, source, ctx = {}) {
     player.hp -= amount;
     this.addLog('ระบบ', `💔 ${player.username} เสีย ${amount} พลังชีวิต (เหลือ ${Math.max(0,player.hp)})`);
+    // ทริกเกอร์ทักษะ "หลังรับดาเมจ" (เล่ห์กล/การโต้กลับ/มรดก/ความแน่วแน่ ฯลฯ)
+    // ต้องทำงานแม้ถูกตีจนใกล้ตาย — เช่น เฉาเชาริบการ์ดที่ก่อดาเมจถึงจะใกล้ตายก็ตาม
+    this.afterDamage(player, amount, source, ctx);
     if (player.hp <= 0) { this.enterDying(player, source); return true; }
-    this.afterDamage(player, amount, source, ctx);   // ทริกเกอร์ทักษะหลังรับดาเมจ
     this.broadcast();
     return false;
   }
@@ -1982,7 +2137,9 @@ class Game {
       const huatuoRed = saver && CHAR_PASSIVES[saver.character]?.redAsPeach
         && this.room.players[this.currentPlayer]?.id !== saver.id
         && saver.hand.some(c => c.color === 'red');
-      if (saver && saver.hp > 0 && (saver.hand.some(c => c.name === 'Peach') || huatuoRed)) {
+      // ผู้ใกล้ตาย (เจ้าของชีวิต) มีสิทธิ์ใช้ [เพอช] ของตัวเองก่อนเสมอ แม้ hp = 0
+      const eligible = saver && (saver.hp > 0 || saver.id === d.playerId);
+      if (eligible && (saver.hand.some(c => c.name === 'Peach') || huatuoRed)) {
         clearInterval(this.dyingTimer);
         this._dyingAsync = true;
         this.timer = 20;
@@ -2602,6 +2759,36 @@ io.on('connection', (socket) => {
     const room = rooms.get(info.roomCode);
     if (!room || !room.game) return;
     room.game.resolveGuicai(info.playerId, cardId || null);
+  });
+
+  // เซี่ยโหวตุน Gang Lie (刚烈): ผู้ก่อความเสียหายเลือกผล — 'discard' | 'damage'
+  socket.on('ganglieChoice', ({ choice }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    const result = room.game.resolveGanglie(info.playerId, choice === 'damage' ? 'damage' : 'discard');
+    if (result && !result.ok && result.msg) socket.emit('error', result.msg);
+  });
+
+  // เลือกการ์ดของเป้าหมายที่จะขโมย/ทำลาย (顺手牵羊 / 过河拆桥)
+  socket.on('takeCardPick', ({ value }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    const result = room.game.resolveTakeCard(info.playerId, value);
+    if (result && !result.ok && result.msg) socket.emit('error', result.msg);
+  });
+
+  // ต้าเฉียว Liu Li (流离): ทิ้งไพ่ 1 ใบ โยก [โจมตี] ไปยังเป้าหมายใหม่
+  socket.on('useLiuli', ({ cardId, targetId }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    const result = room.game.resolveLiuli(info.playerId, cardId, targetId);
+    if (result && !result.ok && result.msg) socket.emit('error', result.msg);
   });
 
   // เยว่จิน/ผู้เล่นตอบ Xiao Guo (骁果) — discardId(ผู้ใช้) หรือ targetEquipSlot/รับดาเมจ

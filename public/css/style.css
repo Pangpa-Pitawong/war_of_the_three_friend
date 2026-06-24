@@ -788,22 +788,30 @@ html, body {
   position: fixed;
   z-index: 1200;
   pointer-events: none;
-  perspective: 700px;
+  perspective: 900px;
 }
-.judg-fly-card {
+/* การ์ดสองหน้าแบบ 3D: หลังไพ่ขึ้นก่อน → ค้างให้ลุ้น → พลิกเปิดหน้าเฉลย */
+.judg-flip-inner {
   position: relative;
   width: 100%; height: 100%;
+  transform-style: preserve-3d;
+  transform-origin: center center;
+  animation: judg-suspense 1.6s cubic-bezier(0.45, 0.05, 0.2, 1) forwards;
+}
+.judg-face {
+  position: absolute; inset: 0;
   border-radius: 8px;
   overflow: hidden;
   border: 2px solid var(--gold);
-  background: #f4ecd6;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
   box-shadow: 0 12px 32px rgba(0,0,0,0.7), 0 0 26px rgba(201,168,76,0.6);
-  transform-origin: center center;
-  animation: judg-reveal 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) forwards;
 }
-.judg-fly-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.judg-fly-card.red  .judg-fly-pip { color: #c0392b; }
-.judg-fly-card.black .judg-fly-pip { color: #1a1a1a; }
+.judg-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.judg-back  { transform: rotateY(0deg);   background: #2a1f3a; }
+.judg-front { transform: rotateY(180deg); background: #f4ecd6; }
+.judg-front.red  .judg-fly-pip { color: #c0392b; }
+.judg-front.black .judg-fly-pip { color: #1a1a1a; }
 .judg-fly-text {
   display: flex; align-items: center; justify-content: center;
   width: 100%; height: 100%; padding: 6px;
@@ -824,16 +832,19 @@ html, body {
   padding: 5px 14px; border-radius: 14px;
   border: 1px solid var(--gold);
   box-shadow: 0 4px 14px rgba(0,0,0,0.5);
-  animation: judg-label-in 0.85s ease-out forwards;
+  animation: judg-label-in 1.6s ease-out forwards;
 }
-@keyframes judg-reveal {
-  0%   { transform: scale(0.25) translateY(0) rotateY(90deg); opacity: 0; }
-  45%  { transform: scale(1.7) translateY(-22px) rotateY(0deg); opacity: 1; }
-  100% { transform: scale(1.55) translateY(-22px) rotateY(0deg); opacity: 1; }
+/* หลังไพ่โผล่ขึ้น → ค้างให้ลุ้น → พลิก 180° เปิดหน้าเฉลยผล */
+@keyframes judg-suspense {
+  0%   { transform: translateY(0)     scale(0.3)  rotateY(0deg);   opacity: 0; }
+  12%  { transform: translateY(-24px) scale(1.35) rotateY(0deg);   opacity: 1; }
+  45%  { transform: translateY(-24px) scale(1.32) rotateY(0deg);   opacity: 1; }
+  70%  { transform: translateY(-24px) scale(1.5)  rotateY(180deg); opacity: 1; }
+  100% { transform: translateY(-24px) scale(1.5)  rotateY(180deg); opacity: 1; }
 }
 @keyframes judg-label-in {
-  0%, 35% { opacity: 0; }
-  60%     { opacity: 1; }
+  0%, 62% { opacity: 0; }
+  78%     { opacity: 1; }
   100%    { opacity: 1; }
 }
 .hand-card.selected { transform: translateY(-16px); border-color: var(--gold-light); box-shadow: 0 0 16px rgba(201,168,76,0.6); }

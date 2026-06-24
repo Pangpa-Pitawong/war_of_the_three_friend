@@ -278,10 +278,11 @@ socket.on('judgmentFlip', (data) => {
 });
 
 // ─── ระบบตอบโต้ (หลบหลีก / โต้ดวล) ───────────────────────────────────────────
-socket.on('awaitResponse', ({ type, need, cardName, from, msg, alsoAccept, dodgesNeeded, canNegate }) => {
+socket.on('awaitResponse', ({ type, need, cardName, from, msg, alsoAccept, dodgesNeeded, canNegate, liuliTargets }) => {
   STATE.responseNeed = need;
   STATE.responseAlsoAccept = alsoAccept || [];
-  openResponseModal(type, need, cardName, from, msg, alsoAccept || [], dodgesNeeded || 1, !!canNegate);
+  STATE._lastAwait = { type, need, cardName, from, msg, alsoAccept: alsoAccept || [], dodgesNeeded: dodgesNeeded || 1, canNegate: !!canNegate, liuliTargets: liuliTargets || [] };
+  openResponseModal(type, need, cardName, from, msg, alsoAccept || [], dodgesNeeded || 1, !!canNegate, liuliTargets || []);
 });
 
 socket.on('askPeach', ({ msg, forId }) => {
@@ -307,6 +308,16 @@ socket.on('askFanjian', ({ sourceName }) => {
 // เนโครแมนซี (鬼才): ซือหม่าอี้เปลี่ยนไพ่ตัดสิน
 socket.on('askGuicai', ({ flip, judgeName, jcardName }) => {
   openGuicaiModal(flip, judgeName, jcardName);
+});
+
+// ความแน่วแน่ (刚烈): ผู้ก่อความเสียหายต่อเซี่ยโหวตุนเลือกผล — ทิ้ง 2 ใบ หรือ รับ 1 ดาเมจ
+socket.on('askGanglie', ({ victimName, tag }) => {
+  openGanglieModal(victimName, tag);
+});
+
+// ขโมย (顺手牵羊) / ทำลายสะพาน (过河拆桥): เลือกการ์ดของเป้าหมายที่จะริบ/ทำลาย
+socket.on('askTakeCard', ({ mode, targetName, options }) => {
+  openTakeCardModal(mode, targetName, options);
 });
 
 // ไม่หวั่นเกรง (骁果): เยว่จินเลือกทิ้งการ์ดพื้นฐานเพื่อใช้ทักษะ
@@ -1027,15 +1038,19 @@ function animateJudgmentFlip({ card, label }, done) {
   const face = cd.image
     ? `<img src="${cd.image}" alt="" onerror="this.remove()">`
     : `<div class="judg-fly-text">${cd.nameTh || card.name}</div>`;
+  // การ์ดสองหน้า: หลังไพ่ขึ้นก่อน (ลุ้น) → พลิกเปิดหน้าเฉลยผล
   wrap.innerHTML = `
-    <div class="judg-fly-card ${isRed ? 'red' : 'black'}">
-      ${face}
-      <div class="judg-fly-pip">${card.rank || ''}${card.suit || ''}</div>
+    <div class="judg-flip-inner">
+      <div class="judg-face judg-back"><img src="${BACK_CARD_SRC}" alt="" onerror="this.remove()"></div>
+      <div class="judg-face judg-front ${isRed ? 'red' : 'black'}">
+        ${face}
+        <div class="judg-fly-pip">${card.rank || ''}${card.suit || ''}</div>
+      </div>
     </div>
     <div class="judg-fly-label">${label || '🎴 ตัดสิน'}</div>`;
   document.body.appendChild(wrap);
 
-  const cardEl = wrap.querySelector('.judg-fly-card');
+  const inner = wrap.querySelector('.judg-flip-inner');
   let flewOut = false;
   const flyToDiscard = () => {
     if (flewOut) return; flewOut = true;
@@ -1050,9 +1065,9 @@ function animateJudgmentFlip({ card, label }, done) {
     }
     setTimeout(() => { wrap.remove(); finish(); }, 430);
   };
-  cardEl.addEventListener('animationend', flyToDiscard, { once: true });
+  inner.addEventListener('animationend', flyToDiscard, { once: true });
   // กันค้าง: ถ้า animationend ไม่ยิง (เช่นแท็บถูกซ่อน) → บังคับเดินต่อ
-  setTimeout(flyToDiscard, 1300);
+  setTimeout(flyToDiscard, 2100);
 }
 
 // มุมการ์ด: เลข + ดอก (สีแดง=โพแดง/ข้าวหลามตัด, ดำ=โพดำ/ดอกจิก)
@@ -1162,7 +1177,7 @@ function confirmPlayCard(targetId) {
 }
 
 // ─── Response Modal (ตอบโต้) ─────────────────────────────────────────────────
-function openResponseModal(type, need, cardName, from, msg, alsoAccept = [], dodgesNeeded = 1, canNegate = false) {
+function openResponseModal(type, need, cardName, from, msg, alsoAccept = [], dodgesNeeded = 1, canNegate = false, liuliTargets = []) {
   const me = STATE.room?.players.find(p => p.id === STATE.playerId);
   // รวมการ์ดที่ใช้ตอบโต้ได้: ตรงชนิด + ที่ passive อนุญาตเพิ่ม (รวม [ขัดขวาง])
   const matching = (me?.hand || []).filter(c => {
@@ -1210,6 +1225,7 @@ function openResponseModal(type, need, cardName, from, msg, alsoAccept = [], dod
       ${dodgesHint}${extraHint}
       <div style="color:var(--text-dim);font-size:0.8rem;text-align:center;margin-bottom:8px">${promptLabel}</div>
       <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:16px" id="resp-cards">${cardsHTML}</div>
+      ${liuliTargets.length ? `<button class="btn" id="resp-liuli" style="width:100%;margin-bottom:8px;background:#6b3fa0;color:#fff">🌀 เบี่ยงเบน (流离) — ทิ้งไพ่โยกการโจมตี</button>` : ''}
       <button class="btn btn-cancel" id="resp-decline" style="width:100%">${declineLabel}</button>
     </div>`;
 
@@ -1225,10 +1241,49 @@ function openResponseModal(type, need, cardName, from, msg, alsoAccept = [], dod
       overlay.classList.remove('active');
     });
   });
+  const liuliBtn = document.getElementById('resp-liuli');
+  if (liuliBtn) liuliBtn.addEventListener('click', () => {
+    overlay.classList.remove('active');
+    openLiuliModal(liuliTargets);
+  });
   document.getElementById('resp-decline').addEventListener('click', () => {
     socket.emit('respondCard', { cardId: null });
     overlay.classList.remove('active');
   });
+}
+
+// ─── Liu Li (流离) — ต้าเฉียวทิ้งไพ่ 1 ใบ เลือกเป้าหมายโยกการโจมตี ───────────────────
+function openLiuliModal(targets) {
+  const overlay = document.getElementById('modal-skill');
+  if (!overlay) return;
+  const me = STATE.room?.players.find(p => p.id === STATE.playerId);
+  const hand = me?.hand || [];
+  let pickedTarget = null;
+  const render = () => {
+    overlay.innerHTML = `<div class="modal gold-frame" style="width:420px;max-width:92vw;text-align:center">
+      <h2 style="margin:0 0 8px;font-size:1.05rem;color:#b388e0">🌀 เบี่ยงเบน (流离)</h2>
+      <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">${pickedTarget ? 'เลือกการ์ด 1 ใบที่จะทิ้งเพื่อโยกการโจมตี' : 'เลือกเป้าหมายที่จะโยกการโจมตีไปให้'}</div>
+      ${pickedTarget
+        ? `<div class="skill-card-row">${hand.map(skillPickCardHTML).join('') || '<div style="color:var(--text-dim)">ไม่มีไพ่</div>'}</div>`
+        : `<div style="display:flex;flex-direction:column;gap:8px">${(targets || []).map(t => `<button class="btn btn-confirm ll-target" data-id="${t.id}" style="width:100%">🎯 ${t.name}</button>`).join('')}</div>`}
+      <button class="btn btn-cancel" id="ll-cancel" style="width:100%;margin-top:10px">↩️ ยกเลิก (กลับไปหลบ)</button>
+    </div>`;
+    overlay.classList.add('active');
+    if (!pickedTarget) {
+      overlay.querySelectorAll('.ll-target').forEach(el => el.addEventListener('click', () => { pickedTarget = el.dataset.id; render(); }));
+    } else {
+      overlay.querySelectorAll('.skill-pick').forEach(el => el.addEventListener('click', () => {
+        socket.emit('useLiuli', { cardId: el.dataset.cardid, targetId: pickedTarget });
+        overlay.classList.remove('active');
+      }));
+    }
+    document.getElementById('ll-cancel').addEventListener('click', () => {
+      overlay.classList.remove('active');
+      const a = STATE._lastAwait;   // กลับไปหน้าต่างหลบเดิม
+      if (a) openResponseModal(a.type, a.need, a.cardName, a.from, a.msg, a.alsoAccept, a.dodgesNeeded, a.canNegate, a.liuliTargets);
+    });
+  };
+  render();
 }
 
 // ─── Peach Modal (ใกล้ตาย — ช่วยตัวเองหรือช่วยเพื่อน) ─────────────────────────
@@ -1433,6 +1488,49 @@ function openGuicaiModal(flip, judgeName, jcardName) {
   document.getElementById('gc-skip').addEventListener('click', () => {
     socket.emit('guicaiReplace', { cardId: null }); overlay.classList.remove('active');
   });
+}
+
+// ─── Gang Lie (刚烈) — ผู้ก่อความเสียหายเลือก: ทิ้งการ์ด 2 ใบ หรือ รับ 1 ดาเมจ ──────
+function openGanglieModal(victimName, tag) {
+  const overlay = document.getElementById('modal-skill');
+  if (!overlay) return;
+  const me = STATE.room.players.find(p => p.id === STATE.playerId);
+  const handCount = me?.hand?.length ?? 0;
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:420px;max-width:92vw;text-align:center">
+    <h2 style="margin:0 0 8px;font-size:1.05rem;color:#e8a85c">🔥 ความแน่วแน่ (刚烈)</h2>
+    <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:14px">${victimName || ''} เปิดไพ่ตัดสิน <b style="color:#e8a85c">${tag || ''}</b> (ไม่ใช่ ♥) — คุณต้องเลือกรับผล</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn btn-confirm" id="gl-discard" style="width:100%">🗂️ ทิ้งการ์ดในมือ 2 ใบ (มีอยู่ ${handCount} ใบ)</button>
+      <button class="btn btn-cancel" id="gl-damage" style="width:100%">💢 รับความเสียหาย 1 หน่วย</button>
+    </div></div>`;
+  overlay.classList.add('active');
+  document.getElementById('gl-discard').addEventListener('click', () => {
+    socket.emit('ganglieChoice', { choice: 'discard' }); overlay.classList.remove('active');
+  });
+  document.getElementById('gl-damage').addEventListener('click', () => {
+    socket.emit('ganglieChoice', { choice: 'damage' }); overlay.classList.remove('active');
+  });
+}
+
+// ─── ขโมย/ทำลายสะพาน — เลือกการ์ดของเป้าหมาย (มือ/อุปกรณ์/ช่องตัดสิน) ──────────────
+function openTakeCardModal(mode, targetName, options) {
+  const overlay = document.getElementById('modal-skill');
+  if (!overlay) return;
+  const isSteal = mode === 'steal';
+  const title = isSteal ? '🃏 ขโมย (顺手牵羊)' : '🔥 ทำลายสะพาน (过河拆桥)';
+  const verb = isSteal ? 'ขโมย' : 'ทำลาย';
+  const accent = isSteal ? '#5cc8e8' : '#e8a85c';
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:440px;max-width:92vw;text-align:center">
+    <h2 style="margin:0 0 8px;font-size:1.05rem;color:${accent}">${title}</h2>
+    <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:14px">เลือกการ์ด 1 ใบของ ${targetName || ''} ที่จะ${verb}</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${(options || []).map(o => `<button class="btn btn-confirm tc-opt" data-value="${o.value}" style="width:100%">${o.label}</button>`).join('')}
+    </div></div>`;
+  overlay.classList.add('active');
+  overlay.querySelectorAll('.tc-opt').forEach(el => el.addEventListener('click', () => {
+    socket.emit('takeCardPick', { value: el.dataset.value });
+    overlay.classList.remove('active');
+  }));
 }
 
 // ─── Xiao Guo (骁果) — เยว่จินเลือกทิ้งการ์ดพื้นฐาน ───────────────────────────────

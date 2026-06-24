@@ -65,16 +65,45 @@ console.log('\n[GuoJia] Yi Ji — draw 2 on taking 1 damage');
   check('guojia drew 2 from Yi Ji', p[1].hand.length === 2);
 }
 
-// ─── Xiahou Dun — Gang Lie (刚烈): non-♥ judgement → source discards 2 ───
-console.log('\n[Xiahou] Gang Lie — attacker discards 2 on non-♥');
+// ─── Xiahou Dun — Gang Lie (刚烈): non-♥ judgement → source CHOOSES discard 2 / take 1 ───
+console.log('\n[Xiahou] Gang Lie — attacker chooses discard 2 on non-♥');
 {
   const atk = card('Attack', 'basic', '♠', 7);
   const p = [makePlayer(0, 'zhangfei', { hand: [atk, card('Peach','basic','♥',3), card('Wine','basic','♣',2)] }), makePlayer(1, 'xiahou')];
   const g = makeGame(p, [card('Attack','basic','♠',9)]); // judgement flip = ♠ (non-♥)
   g.playCard('P0', atk.id, 'P1');
-  g.resolveResponse('P1', null);   // xiahou takes damage → gang lie
+  g.resolveResponse('P1', null);   // xiahou takes damage → gang lie window opens for attacker
   check('xiahou hp 3', p[1].hp === 3);
+  check('gang lie window opened for attacker', !!g.ganglie && g.ganglie.sourceId === 'P0');
+  g.resolveGanglie('P0', 'discard');  // attacker picks "discard 2"
+  check('window cleared', !g.ganglie);
   check('attacker discarded 2 cards (0 left)', p[0].hand.length === 0);
+  check('attacker took no damage', p[0].hp === 4);
+}
+
+// ─── Xiahou Dun — Gang Lie: attacker chooses to TAKE 1 damage instead ───
+console.log('\n[Xiahou] Gang Lie — attacker chooses to take 1 damage');
+{
+  const atk = card('Attack', 'basic', '♠', 7);
+  const p = [makePlayer(0, 'zhangfei', { hand: [atk, card('Peach','basic','♥',3), card('Wine','basic','♣',2)] }), makePlayer(1, 'xiahou')];
+  const g = makeGame(p, [card('Attack','basic','♠',9)]);
+  g.playCard('P0', atk.id, 'P1');
+  g.resolveResponse('P1', null);
+  g.resolveGanglie('P0', 'damage');   // attacker picks "take 1 damage"
+  check('attacker took 1 damage (hp 3)', p[0].hp === 3);
+  check('attacker kept both remaining cards', p[0].hand.length === 2);
+}
+
+// ─── Xiahou Dun — Gang Lie: attacker with <2 cards is forced to take damage (no window) ───
+console.log('\n[Xiahou] Gang Lie — attacker with 0 hand cards auto-takes damage');
+{
+  const atk = card('Attack', 'basic', '♠', 7);
+  const p = [makePlayer(0, 'zhangfei', { hand: [atk] }), makePlayer(1, 'xiahou')];
+  const g = makeGame(p, [card('Attack','basic','♠',9)]);
+  g.playCard('P0', atk.id, 'P1');     // attacker's only card is the Attack → 0 left after
+  g.resolveResponse('P1', null);
+  check('no choice window (hand <2)', !g.ganglie);
+  check('attacker auto-took 1 damage (hp 3)', p[0].hp === 3);
 }
 
 // ─── Hua Xiong — Conqueror: red Attack damage → attacker draws ───
@@ -140,6 +169,28 @@ console.log('\n[DaQiao] Guo Se — ♦ card as Overindulgence');
   const res = g.playCard('P0', diamond.id, 'P1', 'Overindulgence');
   check('guo se accepted', res.ok === true);
   check('overindulgence placed on target', p[1].judgments.some(c => c.name === 'Overindulgence'));
+}
+
+// ─── Da Qiao — Liu Li (流离): redirect an Attack to another in range by discarding ───
+console.log('\n[DaQiao] Liu Li — discard to redirect an Attack');
+{
+  const atk = card('Attack', 'basic', '♠', 7);
+  const junk = card('Dodge', 'basic', '♣', 2);
+  const p = [
+    makePlayer(0, 'zhangfei', { hand: [atk] }),
+    makePlayer(1, 'daqiao', { hand: [junk] }),
+    makePlayer(2, 'huangzhong'),
+  ];
+  const g = makeGame(p);
+  g.playCard('P0', atk.id, 'P1');                 // attack daqiao
+  check('dodge pending on daqiao', g.pending && g.pending.responderId === 'P1');
+  const r = g.resolveLiuli('P1', junk.id, 'P2');  // discard junk → redirect to P2
+  check('liuli accepted', r.ok === true);
+  check('daqiao discarded the card', p[1].hand.length === 0);
+  check('attack redirected — pending now on P2', g.pending && g.pending.responderId === 'P2');
+  g.resolveResponse('P2', null);                  // P2 can't dodge → takes damage
+  check('daqiao unharmed (hp 4)', p[1].hp === 4);
+  check('P2 took the redirected damage (hp 3)', p[2].hp === 3);
 }
 
 // ─── Hua Tuo — Jiu Ji (急救): red card saves dying in others' turn ───

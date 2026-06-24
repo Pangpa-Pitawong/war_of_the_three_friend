@@ -162,6 +162,45 @@ console.log('\n[9] Steal — no Negation → immediate');
   check('p1 has no cards', p[1].hand.length === 0);
 }
 
+// ─── Test 9b: Steal/Burning Bridges — player CHOOSES which card (multi-zone) ───
+console.log('\n[9b] Steal — choose card zone (hand vs equipment)');
+{
+  const p = [
+    makePlayer(0, 'caocao', { hand: [card('Steal', 'stratagem')] }),
+    makePlayer(1, 'zhangfei', {
+      hand: [card('Dodge', 'basic')],
+      equipment: { weapon: card('Green Dragon Blade','weapon','♠',5,{range:3}), armor: null, atkMount: null, defMount: null },
+    }),
+  ];
+  const g = makeGame(p);
+  g.playCard('P0', p[0].hand[0].id, 'P1');
+  check('pick window opened (2 zones)', !!g.cardPick && g.cardPick.fromId === 'P0');
+  check('options include hand + weapon', g.cardPick.options.length === 2);
+  g.resolveTakeCard('P0', 'equip:weapon');     // choose the weapon, not the hand card
+  check('window cleared', !g.cardPick);
+  check('p0 stole the weapon', p[0].hand.some(c => c.name === 'Green Dragon Blade'));
+  check('p1 keeps the Dodge in hand', p[1].hand.some(c => c.name === 'Dodge'));
+  check('p1 weapon gone', !p[1].equipment.weapon);
+}
+
+console.log('\n[9c] Burning Bridges — choose to destroy equipment');
+{
+  const p = [
+    makePlayer(0, 'caocao', { hand: [card('Burning Bridges', 'stratagem')] }),
+    makePlayer(1, 'zhangfei', {
+      hand: [card('Peach', 'basic', '♥', 3)],
+      equipment: { weapon: null, armor: card('Nio Shield','armor','♣',2), atkMount: null, defMount: null },
+    }),
+  ];
+  const g = makeGame(p);
+  g.playCard('P0', p[0].hand[0].id, 'P1');
+  check('pick window opened', !!g.cardPick && g.cardPick.mode === 'burn');
+  g.resolveTakeCard('P0', 'equip:armor');
+  check('armor destroyed (to discard)', g.discardPile.some(c => c.name === 'Nio Shield'));
+  check('p1 keeps Peach', p[1].hand.some(c => c.name === 'Peach'));
+  check('p0 did not gain it (burned)', !p[0].hand.some(c => c.name === 'Nio Shield'));
+}
+
 // ─── Test 10: Blue Steel Sword ignores Eight Trigrams armor ───
 console.log('\n[10] Blue Steel Sword — ignores armor auto-dodge');
 {
