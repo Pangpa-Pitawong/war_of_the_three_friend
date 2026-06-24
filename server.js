@@ -9,7 +9,14 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 // Static files
-app.use(express.static(path.join(__dirname, 'public')));
+// ไม่แคชไฟล์โค้ด/หน้าเว็บ (html/js/css) — ให้เบราว์เซอร์ดึงไฟล์ใหม่ทุกครั้งที่รีโหลด
+// กันปัญหา game.js เวอร์ชันเก่าค้างในแคช (เช่น จำนวนการ์ดในคลังข้อมูลไม่อัปเดต)
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: false,
+  setHeaders: (res, filePath) => {
+    if (/\.(html|js|css)$/i.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 app.use('/GeneralCard', express.static(path.join(__dirname, 'GeneralCard')));
 app.use('/GameCard', express.static(path.join(__dirname, 'GameCard')));
 app.use('/BackCard', express.static(path.join(__dirname, 'BackCard')));
@@ -666,6 +673,7 @@ class Game {
     // เซี่ยโหวตุน (夏侯惇) — Gang Lie (刚烈): ตัดสิน ไม่ใช่ ♥ → ผู้ก่อทิ้ง 2 ใบ/รับ 1 ดาเมจ
     if (CHAR_PASSIVES[victim.character]?.ganglie && source && source.id !== victim.id && source.hp > 0) {
       const flip = this.drawCards(1)[0];
+      this.emitJudgment(victim, flip, '🔥 ตัดสินความแน่วแน่');
       if (flip) this.discardPile.push(flip);
       const tag = flip ? `${flip.rank}${flip.suit}` : '—';
       if (flip && flip.suit !== '♥') {
@@ -981,6 +989,7 @@ class Game {
       while (taken < 8) {  // กันลูปไม่รู้จบ
         const flip = this.drawCards(1)[0];
         if (!flip) break;
+        this.emitJudgment(cur, flip, '🌊 ตัดสินเทพีแม่น้ำลั่ว');
         const tag = `${flip.rank}${flip.suit}`;
         if (flip.color === 'black') {
           cur.hand.push(flip);
@@ -1087,8 +1096,22 @@ class Game {
     this._stepJudgment(cur);   // เดินการ์ดตัดสินใบถัดไป
   }
 
+  // ─── แจ้งไคลเอนต์ให้เล่นอนิเมชั่น "เปิดไพ่ตัดสิน" ที่กองไพ่กลางกระดาน ──────────────
+  emitJudgment(player, flip, label) {
+    if (!flip) return;
+    io.to(this.room.code).emit('judgmentFlip', {
+      playerId: player?.id || null,
+      playerName: player?.username || '',
+      label: label || '🎴 ตัดสิน',
+      card: { name: flip.name, suit: flip.suit, rank: flip.rank, color: flip.color },
+    });
+  }
+
   // ประมวลผลไพ่ตัดสินที่เปิดแล้ว (flip) — บังคับใช้ผลของการ์ดหน่วงเวลา
   applyJudgmentResult(cur, jcard, flip) {
+    const jLabel = jcard.name === 'Lightning' ? '⚡ ตัดสินสายฟ้า'
+      : jcard.name === 'Overindulgence' ? '🍵 ตัดสินเสพสุข' : '🎴 ตัดสิน';
+    this.emitJudgment(cur, flip, jLabel);
     if (flip) this.discardPile.push(flip);
     const tag = flip ? `${flip.rank}${flip.suit}` : '—';
 
@@ -1269,6 +1292,18 @@ class Game {
     const result = this.applyCard(cur, effCard, target);
     if (!result.ok) return result;
 
+    // ── ป้ายบอกเป้าหมายชั่วคราว (แสดงบนหัวเป้าหมาย) — บุกทะลวง/ฝนลูกธนู ไม่รวมตัวเอง ──
+    let _targetIds = [];
+    if (target) _targetIds = [target.id];
+    else if (['Raining Arrows', 'Barbarian Invasion'].includes(effCard.name))
+      _targetIds = players.filter(p => p.id !== cur.id && p.hp > 0).map(p => p.id);
+    if (_targetIds.length) {
+      io.to(this.room.code).emit('cardTargeted', {
+        sourceId: cur.id, sourceName: cur.username,
+        cardName: effCard.name, targetIds: _targetIds,
+      });
+    }
+
     // นำการ์ดออกจากมือ (อุปกรณ์เข้าช่อง, การ์ดหน่วงเวลาเข้าช่องตัดสิน, อื่นๆ เข้ากองทิ้ง)
     cur.hand.splice(cardIdx, 1);
     if (!['weapon','armor','mount'].includes(card.type) && !result.noDiscard) {
@@ -1304,6 +1339,7 @@ class Game {
     // หม่าเฉา (马超) — Tie Ji (铁骑): โจมตีโดน → ตัดสิน ถ้าแดง เป้าหมายหลบไม่ได้ (เป้าหมายเดียว)
     if (CHAR_PASSIVES[from.character]?.tieji && target) {
       const flip = this.drawCards(1)[0];
+      this.emitJudgment(from, flip, '🐎 ตัดสินทแกล้วทหารม้า');
       if (flip) this.discardPile.push(flip);
       const tag = flip ? `${flip.rank}${flip.suit}` : '—';
       if (flip && flip.color === 'red') {

@@ -35,7 +35,7 @@ function notify(msg, type = 'info', duration = 3500) {
 
 // ─── จำนวนการ์ดแต่ละใบในสำรับ (รวม 108 ใบ) ───────────────────────────────────
 window.CARD_COUNTS = {
-  'Attack': 30, 'Dodge': 15, 'Peach': 1,
+  'Attack': 30, 'Dodge': 15, 'Peach': 8,
   'Something Out of Nothing': 4, 'Duel': 3, 'Burning Bridges': 6, 'Steal': 5,
   'Borrowed Sword': 2, 'Negation': 3, 'Barbarian Invasion': 3, 'Raining Arrows': 1,
   'Oath of the Peach Garden': 1, 'Bumper Harvest': 2, 'Lightning': 2, 'Overindulgence': 3,
@@ -223,6 +223,7 @@ socket.on('roomUpdate', (room) => {
 
 socket.on('gameStarted', (room) => {
   STATE.room = room;
+  STATE._handIds = null; // รีเซ็ตตัวติดตามไพ่ในมือสำหรับเกมใหม่ (ไม่บินไพ่เปิดเกม)
   showScreen('game');
   renderGame();
   notify('⚔️ เกมเริ่มต้นแล้ว!', 'success');
@@ -257,6 +258,23 @@ socket.on('timerTick', (t) => {
     el.textContent = t;
     el.parentElement?.classList.toggle('warning', t <= 10);
   }
+});
+
+// ─── ป้ายบอกเป้าหมายการ์ด (ใครใช้การ์ดอะไรใส่ใคร) — แสดงบนหัวชั่วคราว ──────────────
+socket.on('cardTargeted', ({ sourceId, sourceName, cardName, targetIds }) => {
+  STATE.cardTargets = { sourceId, sourceName, cardName, targetIds: targetIds || [] };
+  clearTimeout(STATE._cardTargetTimer);
+  STATE._cardTargetTimer = setTimeout(() => {
+    STATE.cardTargets = null;
+    if (STATE.currentScreen === 'game') renderGame();
+  }, 2600);
+  if (STATE.currentScreen === 'game') renderGame();
+});
+
+// ─── อนิเมชั่นเปิดไพ่ตัดสินที่กองไพ่กลางกระดาน (สายฟ้า/เสพสุข/ทักษะตัดสินต่างๆ) ──────
+socket.on('judgmentFlip', (data) => {
+  if (STATE.currentScreen !== 'game' || !data?.card) return;
+  enqueueJudgment(data);
 });
 
 // ─── ระบบตอบโต้ (หลบหลีก / โต้ดวล) ───────────────────────────────────────────
@@ -632,16 +650,24 @@ function equipCardsHTML(p) {
   }).join('');
 }
 
-// ─── การ์ดหน่วงเวลาในช่องตัดสิน (สายฟ้า/เสพสุข) ที่แสดงหน้าผู้เล่น ────────────────
-function judgmentBadgesHTML(p) {
+// ─── การ์ดหน่วงเวลาในช่องตัดสิน (สายฟ้า/เสพสุข) — แสดงเป็นการ์ดในโซนอุปกรณ์ ────────
+// บอกให้เห็นว่าใครโดนการ์ดตัดสินอะไรอยู่ (สายฟ้าที่เปิดแล้วไม่โดนจะถูกย้ายไปคนถัดไป
+// โดยเซิร์ฟเวอร์ — ที่นี่แค่แสดงตามช่องตัดสินปัจจุบันของผู้เล่นแต่ละคน)
+function judgmentCardsHTML(p) {
   const js = p.judgments || [];
   if (!js.length) return '';
-  return `<div class="player-judgments" style="display:flex;gap:3px;justify-content:center;margin-top:2px;flex-wrap:wrap">` +
-    js.map(c => {
-      const icon = c.name === 'Lightning' ? '⚡' : c.name === 'Overindulgence' ? '🍵' : '🎴';
-      const nm = (window.CARD_DATA[c.name]?.nameTh || c.name).split('(')[0].trim();
-      return `<span title="ช่องตัดสิน: ${nm}" style="font-size:0.78rem;background:#0008;border:1px solid var(--border);border-radius:6px;padding:0 4px">${icon}</span>`;
-    }).join('') + `</div>`;
+  return js.map(c => {
+    const cd = window.CARD_DATA[c.name];
+    const icon = c.name === 'Lightning' ? '⚡' : c.name === 'Overindulgence' ? '🍵' : '🎴';
+    const nm = (cd?.nameTh || c.name).split('(')[0].trim();
+    const img = cd?.image ? `<img src="${cd.image}" alt="${nm}" onerror="this.style.display='none'">` : '';
+    return `<div class="equip-card judgment-card" data-equip="${c.name}" title="ช่องตัดสิน: ${nm}">
+      ${img}
+      ${suitPip(c)}
+      <div class="judgment-icon">${icon}</div>
+      <div class="equip-card-name">${nm}</div>
+    </div>`;
+  }).join('');
 }
 
 // ─── Game Board Render ─────────────────────────────────────────────────
@@ -663,7 +689,8 @@ function renderGame() {
   const myIdx = players.findIndex(p => p.id === STATE.playerId);
   const placed = [];   // เก็บ {node, angle} ไว้คำนวณรัศมีหลังวัดขนาด node จริง
   players.forEach((p, i) => {
-    const angle = ((i - myIdx) / players.length) * Math.PI * 2 - Math.PI / 2;
+    // +π/2 = วางตัวเอง (i === myIdx) ไว้ข้างล่างสุดของวง คนอื่นไล่ตามลำดับที่นั่ง
+    const angle = ((i - myIdx) / players.length) * Math.PI * 2 + Math.PI / 2;
 
     const isCurrent = game?.currentPlayer === i;
     const dead = p.hp <= 0;
@@ -678,6 +705,17 @@ function renderGame() {
     `).join('');
 
     const equips = equipCardsHTML(p);
+    const judg = judgmentCardsHTML(p);
+
+    // โรลต่อท้ายชื่อตัวละคร — เปิดเผยเฉพาะของตัวเอง / จักรพรรดิ / ตอนจบเกม
+    const rd = (p.role && p.role !== '?') ? window.ROLE_DATA[p.role] : null;
+    const roleLabel = rd ? ` · <span style="color:${rd.color};font-weight:600">${rd.nameTh}</span>` : '';
+
+    // ป้ายบอกเป้าหมายการ์ดชั่วคราว (ลอยบนหัว) — ใครถูกใช้การ์ดอะไรจากใคร
+    const ct = STATE.cardTargets;
+    const targetBanner = (ct && ct.targetIds.includes(p.id) && !dead)
+      ? `<div class="target-banner">🎯 ${(window.CARD_DATA[ct.cardName]?.nameTh||ct.cardName).split('(')[0].trim()}<span class="tb-src">↪ จาก ${ct.sourceName}</span></div>`
+      : '';
 
     const targetable = STATE.selectingTarget && !isSelf && !dead && isTargetable(STATE.selectedCard, p);
 
@@ -692,6 +730,7 @@ function renderGame() {
       : '';
     node.innerHTML = `
       <div class="player-target-ring"></div>
+      ${targetBanner}
       ${distBadge}
       <div style="position:relative">
         <img class="player-portrait ${isCurrent?'current-turn':''} ${isSelf?'self':''}"
@@ -706,10 +745,9 @@ function renderGame() {
       <div class="player-hp-bar"><div class="player-hp-fill ${hpClass}" style="width:${hpPct}%"></div></div>
       <div class="hp-hearts">${hearts}</div>
       <div class="player-node-name">${p.username}${isSelf?' (คุณ)':''}</div>
-      <div class="player-hp-text">${p.hp}/${p.maxHp} HP · ${char.nameTh||''}</div>
+      <div class="player-hp-text">${p.hp}/${p.maxHp} HP · ${char.nameTh||''}${roleLabel}</div>
       ${isCurrent ? `<div style="font-size:0.65rem;color:var(--gold);text-align:center">⟵ ตานี้</div>` : ''}
-      <div class="player-equip">${equips}</div>
-      ${judgmentBadgesHTML(p)}
+      <div class="player-equip">${equips}${judg}</div>
     `;
 
     // Target selection
@@ -885,6 +923,10 @@ function renderHand(me) {
   const players = STATE.room?.players || [];
   const myTurn = game && players[game.currentPlayer]?.id === STATE.playerId && game.phase === 'play' && !game.pending && !game.harvest;
 
+  // ติดตามไพ่ในมือชุดก่อนหน้า เพื่อรู้ว่าใบไหน "เพิ่งจั่วมาใหม่"
+  const prevIds = STATE._handIds;
+  const newDivs = [];
+
   hand.forEach(card => {
     const cd = window.CARD_DATA[card.name];
     const unplayable = myTurn && cardPlayIssue(card);
@@ -898,7 +940,119 @@ function renderHand(me) {
     div.addEventListener('click', () => onCardClick(card));
     addTooltipHover(div, () => cardTooltipHTML(card.name));
     container.appendChild(div);
+    // ใบใหม่ที่ไม่เคยมีในมือรอบก่อน = เพิ่งจั่ว → เก็บไว้เล่นอนิเมชั่น
+    if (prevIds && !prevIds.has(card.id)) newDivs.push(div);
   });
+
+  // อัปเดตชุด id ปัจจุบัน
+  STATE._handIds = new Set(hand.map(c => c.id));
+
+  // เล่นอนิเมชั่นจั่วไพ่จากกองมาที่มือ (เฉพาะใบที่เพิ่งได้มา, ไล่ทีละใบ)
+  if (newDivs.length) {
+    newDivs.forEach((div, i) => animateDrawToHand(div, i * 110));
+  }
+}
+
+// อนิเมชั่น: การ์ดหลังไพ่บินจากกองไพ่กลางกระดานมาลงตำแหน่งในมือ
+const BACK_CARD_SRC = '/BackCard/Screenshot 2026-06-23 011011.png';
+function animateDrawToHand(targetEl, delay = 0) {
+  const deck = document.getElementById('deck-pile');
+  if (!deck || !targetEl) return;
+  const from = deck.getBoundingClientRect();
+  const to = targetEl.getBoundingClientRect();
+  if (!to.width || !from.width) return;
+
+  // ซ่อนการ์ดจริงไว้ก่อน จนกว่าตัวบินจะลงถึงที่
+  targetEl.style.visibility = 'hidden';
+
+  const fly = document.createElement('div');
+  fly.className = 'draw-fly';
+  fly.innerHTML = `<img src="${BACK_CARD_SRC}" alt="">`;
+  fly.style.left = from.left + 'px';
+  fly.style.top = from.top + 'px';
+  fly.style.width = from.width + 'px';
+  fly.style.height = from.height + 'px';
+  fly.style.transitionDelay = delay + 'ms';
+  document.body.appendChild(fly);
+
+  // บังคับ reflow แล้วค่อยตั้งค่าปลายทาง เพื่อให้ transition ทำงาน
+  void fly.offsetWidth;
+  requestAnimationFrame(() => {
+    fly.style.left = to.left + 'px';
+    fly.style.top = to.top + 'px';
+    fly.style.width = to.width + 'px';
+    fly.style.height = to.height + 'px';
+  });
+
+  const FLIGHT = 420;
+  setTimeout(() => {
+    fly.remove();
+    targetEl.style.visibility = '';
+    targetEl.classList.add('just-drawn');
+    setTimeout(() => targetEl.classList.remove('just-drawn'), 450);
+  }, delay + FLIGHT);
+}
+
+// ─── อนิเมชั่นเปิดไพ่ตัดสิน: เข้าคิวเล่นทีละใบ (กันซ้อนกันตอนตัดสินหลายใบ เช่น 洛神) ──
+function enqueueJudgment(data) {
+  STATE._judgQueue = STATE._judgQueue || [];
+  STATE._judgQueue.push(data);
+  if (!STATE._judgPlaying) playNextJudgment();
+}
+function playNextJudgment() {
+  const q = STATE._judgQueue || [];
+  if (!q.length) { STATE._judgPlaying = false; return; }
+  STATE._judgPlaying = true;
+  animateJudgmentFlip(q.shift(), () => setTimeout(playNextJudgment, 140));
+}
+
+// การ์ดเปิดหงายขึ้นจากกองไพ่กลางกระดาน → ค้างโชว์ผล → บินเข้ากองทิ้ง
+function animateJudgmentFlip({ card, label }, done) {
+  const finish = () => { if (done) { done(); done = null; } };
+  const deck = document.getElementById('deck-pile');
+  if (!deck || !card) { finish(); return; }
+  const from = deck.getBoundingClientRect();
+  if (!from.width) { finish(); return; }
+  const cd = window.CARD_DATA?.[card.name] || {};
+  const isRed = card.suit === '♥' || card.suit === '♦';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'judg-fly';
+  wrap.style.left = (from.left + from.width / 2) + 'px';
+  wrap.style.top = (from.top + from.height / 2) + 'px';
+  wrap.style.width = from.width + 'px';
+  wrap.style.height = from.height + 'px';
+  wrap.style.marginLeft = (-from.width / 2) + 'px';
+  wrap.style.marginTop = (-from.height / 2) + 'px';
+  const face = cd.image
+    ? `<img src="${cd.image}" alt="" onerror="this.remove()">`
+    : `<div class="judg-fly-text">${cd.nameTh || card.name}</div>`;
+  wrap.innerHTML = `
+    <div class="judg-fly-card ${isRed ? 'red' : 'black'}">
+      ${face}
+      <div class="judg-fly-pip">${card.rank || ''}${card.suit || ''}</div>
+    </div>
+    <div class="judg-fly-label">${label || '🎴 ตัดสิน'}</div>`;
+  document.body.appendChild(wrap);
+
+  const cardEl = wrap.querySelector('.judg-fly-card');
+  let flewOut = false;
+  const flyToDiscard = () => {
+    if (flewOut) return; flewOut = true;
+    const disc = document.getElementById('discard-pile');
+    if (disc) {
+      const to = disc.getBoundingClientRect();
+      wrap.style.transition = 'left 0.4s ease-in, top 0.4s ease-in, transform 0.4s ease-in, opacity 0.4s ease-in';
+      wrap.style.left = (to.left + to.width / 2) + 'px';
+      wrap.style.top = (to.top + to.height / 2) + 'px';
+      wrap.style.transform = 'scale(0.45)';
+      wrap.style.opacity = '0';
+    }
+    setTimeout(() => { wrap.remove(); finish(); }, 430);
+  };
+  cardEl.addEventListener('animationend', flyToDiscard, { once: true });
+  // กันค้าง: ถ้า animationend ไม่ยิง (เช่นแท็บถูกซ่อน) → บังคับเดินต่อ
+  setTimeout(flyToDiscard, 1300);
 }
 
 // มุมการ์ด: เลข + ดอก (สีแดง=โพแดง/ข้าวหลามตัด, ดำ=โพดำ/ดอกจิก)
