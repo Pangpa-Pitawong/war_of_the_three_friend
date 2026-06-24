@@ -260,14 +260,14 @@ socket.on('timerTick', (t) => {
 });
 
 // ─── ระบบตอบโต้ (หลบหลีก / โต้ดวล) ───────────────────────────────────────────
-socket.on('awaitResponse', ({ type, need, cardName, from, msg, alsoAccept, dodgesNeeded }) => {
+socket.on('awaitResponse', ({ type, need, cardName, from, msg, alsoAccept, dodgesNeeded, canNegate }) => {
   STATE.responseNeed = need;
   STATE.responseAlsoAccept = alsoAccept || [];
-  openResponseModal(type, need, cardName, from, msg, alsoAccept || [], dodgesNeeded || 1);
+  openResponseModal(type, need, cardName, from, msg, alsoAccept || [], dodgesNeeded || 1, !!canNegate);
 });
 
-socket.on('askPeach', ({ msg }) => {
-  openPeachModal(msg);
+socket.on('askPeach', ({ msg, forId }) => {
+  openPeachModal(msg, forId);
 });
 
 // ตอนจบตา: มือเกินลิมิต → เลือกการ์ดที่จะทิ้งเอง (ไม่สุ่ม)
@@ -608,6 +608,18 @@ function equipCardsHTML(p) {
   }).join('');
 }
 
+// ─── การ์ดหน่วงเวลาในช่องตัดสิน (สายฟ้า/เสพสุข) ที่แสดงหน้าผู้เล่น ────────────────
+function judgmentBadgesHTML(p) {
+  const js = p.judgments || [];
+  if (!js.length) return '';
+  return `<div class="player-judgments" style="display:flex;gap:3px;justify-content:center;margin-top:2px;flex-wrap:wrap">` +
+    js.map(c => {
+      const icon = c.name === 'Lightning' ? '⚡' : c.name === 'Overindulgence' ? '🍵' : '🎴';
+      const nm = (window.CARD_DATA[c.name]?.nameTh || c.name).split('(')[0].trim();
+      return `<span title="ช่องตัดสิน: ${nm}" style="font-size:0.78rem;background:#0008;border:1px solid var(--border);border-radius:6px;padding:0 4px">${icon}</span>`;
+    }).join('') + `</div>`;
+}
+
 // ─── Game Board Render ─────────────────────────────────────────────────
 function renderGame() {
   const room = STATE.room;
@@ -673,6 +685,7 @@ function renderGame() {
       <div class="player-hp-text">${p.hp}/${p.maxHp} HP · ${char.nameTh||''}</div>
       ${isCurrent ? `<div style="font-size:0.65rem;color:var(--gold);text-align:center">⟵ ตานี้</div>` : ''}
       <div class="player-equip">${equips}</div>
+      ${judgmentBadgesHTML(p)}
     `;
 
     // Target selection
@@ -789,7 +802,8 @@ function renderGame() {
   const dyingMe = game?.dyingPlayerId === STATE.playerId;
   const discardForMe = game?.awaitingDiscard && game.awaitingDiscard.playerId === STATE.playerId;
   const harvestForMe = game?.harvest && game.harvest.picker === STATE.playerId;
-  if (!pendingForMe && !dyingMe && !discardForMe && !harvestForMe && respOverlay.classList.contains('active')) {
+  // STATE._peachOpen: ถูกถามให้ใช้เพอช (ช่วยตัวเอง/เพื่อน) — อย่าเพิ่งปิดหน้าต่าง
+  if (!pendingForMe && !dyingMe && !discardForMe && !harvestForMe && !STATE._peachOpen && respOverlay.classList.contains('active')) {
     respOverlay.classList.remove('active');
   }
   // เปิดหน้าต่างเลือกทิ้งการ์ดถ้ายังค้างอยู่ (ครอบคลุมกรณี reconnect)
@@ -812,13 +826,15 @@ function isTargetable(card, p) {
   if (card.name === 'Attack' || (me?.character === 'guanyu' && card.color === 'red')) {
     return !!p.inAttackRange;
   }
-  // ท้าดวล / ยืมดาบ — ไม่จำกัดระยะ
+  // ยืมดาบ — เป้าหมายต้องมีอาวุธ
+  if (card.name === 'Borrowed Sword') return !!(p.equipment && p.equipment.weapon);
+  // ท้าดวล / เสพสุข — ไม่จำกัดระยะ (เป้าหมายใดก็ได้ที่ยังมีชีวิต)
   return true;
 }
 
 // ─── เงื่อนไขการเล่นการ์ด (mirror ฝั่งเซิร์ฟเวอร์) ────────────────────────────
 const RESPONSE_ONLY_CARDS = ['Dodge', 'Negation'];
-const UNSUPPORTED_PLAY_CARDS = ['Lightning', 'Overindulgence'];
+const UNSUPPORTED_PLAY_CARDS = [];   // ไม่มีการ์ดที่เล่นไม่ได้แล้ว (สายฟ้า/เสพสุข รองรับแล้ว)
 
 // คืนข้อความปัญหาถ้าเล่นการ์ดนี้ตอนนี้ไม่ได้ (null = เล่นได้)
 function cardPlayIssue(card) {
@@ -826,10 +842,11 @@ function cardPlayIssue(card) {
   // Guan Yu: ไพ่แดงทุกใบเล่นเป็นโจมตีได้ (ข้ามการตรวจ response-only)
   const isGuanyuRed = me?.character === 'guanyu' && card.color === 'red';
   if (RESPONSE_ONLY_CARDS.includes(card.name) && !isGuanyuRed) return 'การ์ดนี้ใช้ตอบโต้เท่านั้น เล่นเองไม่ได้';
-  if (UNSUPPORTED_PLAY_CARDS.includes(card.name)) return 'การ์ดหน่วงเวลา — ฉบับนี้ยังไม่รองรับการเล่น';
   if (card.name === 'Peach') {
     if (me && me.hp >= me.maxHp) return 'พลังชีวิตเต็มแล้ว ใช้เพอชไม่ได้';
   }
+  if (card.name === 'Lightning' && (me?.judgments || []).some(c => c.name === 'Lightning'))
+    return 'มีสายฟ้าวางอยู่หน้าคุณแล้ว';
   return null;
 }
 
@@ -892,7 +909,7 @@ function onCardClick(card) {
   STATE.selectedCard = card;
   const me2 = players.find(p => p.id === STATE.playerId);
   const isGuanyuRedCard = me2?.character === 'guanyu' && card.color === 'red' && card.name !== 'Attack';
-  const needsTarget = ['Attack','Steal','Burning Bridges','Borrowed Sword','Duel'].includes(card.name) || isGuanyuRedCard;
+  const needsTarget = ['Attack','Steal','Burning Bridges','Borrowed Sword','Duel','Overindulgence'].includes(card.name) || isGuanyuRedCard;
 
   if (needsTarget) {
     STATE.selectingTarget = true;
@@ -916,23 +933,25 @@ function confirmPlayCard(targetId) {
 }
 
 // ─── Response Modal (ตอบโต้) ─────────────────────────────────────────────────
-function openResponseModal(type, need, cardName, from, msg, alsoAccept = [], dodgesNeeded = 1) {
+function openResponseModal(type, need, cardName, from, msg, alsoAccept = [], dodgesNeeded = 1, canNegate = false) {
   const me = STATE.room?.players.find(p => p.id === STATE.playerId);
-  // รวมการ์ดที่ใช้ตอบโต้ได้: ตรงชนิด + ที่ passive อนุญาตเพิ่ม
+  // รวมการ์ดที่ใช้ตอบโต้ได้: ตรงชนิด + ที่ passive อนุญาตเพิ่ม (รวม [ขัดขวาง])
   const matching = (me?.hand || []).filter(c => {
     if (c.name === need) return true;
     if (alsoAccept.includes(c.name)) return true;
     if (alsoAccept.includes('_black') && c.color === 'black') return true;
     return false;
   });
-  const needTh = need === 'Dodge' ? 'หลบหลีก' : 'โจมตี';
+  const needThMap = { Dodge: 'หลบหลีก', Attack: 'โจมตี', Negation: 'ขัดขวาง' };
+  const needTh = needThMap[need] || need;
   const cardThNeed = window.CARD_DATA[need]?.nameTh || needTh;
-  const extraHint = alsoAccept.length
-    ? `<div style="color:#f39c12;font-size:0.75rem;text-align:center;margin-bottom:4px">✨ ทักษะพิเศษ: ${
-        alsoAccept.includes('Attack') ? 'การ์ดโจมตีใช้หลบได้' :
-        alsoAccept.includes('Dodge') ? 'การ์ดหลบใช้โจมตีได้' :
-        alsoAccept.includes('_black') ? 'การ์ดสีดำใช้หลบได้' : ''
-      }</div>` : '';
+  const hints = [];
+  if (alsoAccept.includes('Attack')) hints.push('การ์ดโจมตีใช้หลบได้');
+  if (alsoAccept.includes('Dodge')) hints.push('การ์ดหลบใช้โจมตีได้');
+  if (alsoAccept.includes('_black')) hints.push('การ์ดสีดำใช้หลบได้');
+  if (canNegate || alsoAccept.includes('Negation')) hints.push('เล่น [ขัดขวาง] ยกเลิกการ์ดกลนี้ได้');
+  const extraHint = hints.length
+    ? `<div style="color:#f39c12;font-size:0.75rem;text-align:center;margin-bottom:4px">✨ ${hints.join(' · ')}</div>` : '';
   const dodgesHint = dodgesNeeded > 1
     ? `<div style="color:#e74c3c;font-size:0.8rem;text-align:center;margin-bottom:4px">⚠️ ต้องหลบ ${dodgesNeeded} ครั้ง (ลู่ปู้: ศักดิ์ศรีนักรบ)</div>` : '';
 
@@ -940,23 +959,29 @@ function openResponseModal(type, need, cardName, from, msg, alsoAccept = [], dod
     ? matching.map(c => {
         const cd = window.CARD_DATA[c.name];
         const isExtra = c.name !== need;
-        return `<div class="resp-card ${isExtra ? 'resp-card-alt' : ''}" data-cardid="${c.id}" title="${isExtra ? '✨ ใช้แทนได้ (ทักษะ)' : ''}">
+        return `<div class="resp-card ${isExtra ? 'resp-card-alt' : ''}" data-cardid="${c.id}" title="${isExtra ? '✨ ใช้แทนได้' : ''}">
           <img src="${cd?.image||''}" onerror="this.style.display='none'">
           ${suitPip(c)}
         </div>`;
       }).join('')
     : `<div style="color:var(--text-dim);font-size:0.85rem;padding:12px">คุณไม่มีการ์ด${cardThNeed} 😢</div>`;
 
+  // ข้อความปุ่ม "ไม่ตอบโต้" ตามชนิดการ์ดที่กำลังตอบ
+  const declineLabel = type === 'negate'   ? '➡️ ปล่อยผ่าน (ไม่ขัดขวาง)'
+    : type === 'borrow'   ? '🚫 ไม่โจมตี — เสียอาวุธของคุณ'
+    : type === 'duel'     ? '💢 ยอมแพ้ — เสียพลังชีวิต'
+    : type === 'avoidatk' ? '💢 ไม่เล่นโจมตี — รับความเสียหาย'
+    : '💢 ไม่หลบ — รับความเสียหาย';
+  const promptLabel = type === 'negate' ? 'เล่น [ขัดขวาง] เพื่อยกเลิก:' : `เลือกการ์ด${cardThNeed}เพื่อตอบโต้:`;
+
   const html = `
     <div class="modal gold-frame" style="width:440px">
       <h2 style="color:#e74c3c">⚠️ ต้องตอบโต้!</h2>
       <div style="text-align:center;color:var(--text);margin-bottom:16px;line-height:1.6">${msg}</div>
       ${dodgesHint}${extraHint}
-      <div style="color:var(--text-dim);font-size:0.8rem;text-align:center;margin-bottom:8px">เลือกการ์ด${cardThNeed}เพื่อตอบโต้:</div>
+      <div style="color:var(--text-dim);font-size:0.8rem;text-align:center;margin-bottom:8px">${promptLabel}</div>
       <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:16px" id="resp-cards">${cardsHTML}</div>
-      <button class="btn btn-cancel" id="resp-decline" style="width:100%">
-        ${need === 'Dodge' ? '💢 ไม่หลบ — รับความเสียหาย' : '💢 ยอมแพ้ — เสียพลังชีวิต'}
-      </button>
+      <button class="btn btn-cancel" id="resp-decline" style="width:100%">${declineLabel}</button>
     </div>`;
 
   const overlay = document.getElementById('modal-response');
@@ -977,9 +1002,12 @@ function openResponseModal(type, need, cardName, from, msg, alsoAccept = [], dod
   });
 }
 
-// ─── Peach Modal (ใกล้ตาย) ───────────────────────────────────────────────────
-function openPeachModal(msg) {
+// ─── Peach Modal (ใกล้ตาย — ช่วยตัวเองหรือช่วยเพื่อน) ─────────────────────────
+function openPeachModal(msg, forId) {
+  STATE._peachOpen = true;
   const me = STATE.room?.players.find(p => p.id === STATE.playerId);
+  const dyingId = forId || STATE.room?.game?.dyingPlayerId;
+  const savingSelf = dyingId === STATE.playerId;
   const peaches = (me?.hand || []).filter(c => c.name === 'Peach');
   const cardsHTML = peaches.map(c => {
     const cd = window.CARD_DATA['Peach'];
@@ -987,14 +1015,14 @@ function openPeachModal(msg) {
       <img src="${cd?.image||''}" onerror="this.style.display='none'">
       ${suitPip(c)}
     </div>`;
-  }).join('');
+  }).join('') || `<div style="color:var(--text-dim);font-size:0.85rem;padding:12px">คุณไม่มี [เพอช] 😢</div>`;
 
   const html = `
     <div class="modal gold-frame" style="width:420px">
-      <h2 style="color:#e91e8c">🍑 ใกล้ตาย!</h2>
+      <h2 style="color:#e91e8c">🍑 ${savingSelf ? 'คุณใกล้ตาย!' : 'ช่วยเพื่อน!'}</h2>
       <div style="text-align:center;color:var(--text);margin-bottom:16px;line-height:1.6">${msg}</div>
       <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:16px">${cardsHTML}</div>
-      <button class="btn btn-cancel" id="peach-decline" style="width:100%">☠️ ยอมตาย</button>
+      <button class="btn btn-cancel" id="peach-decline" style="width:100%">${savingSelf ? '☠️ ยอมตาย' : '🙅 ไม่ช่วย'}</button>
     </div>`;
 
   const overlay = document.getElementById('modal-response');
@@ -1003,11 +1031,13 @@ function openPeachModal(msg) {
 
   overlay.querySelectorAll('.resp-card').forEach(el => {
     el.addEventListener('click', () => {
+      STATE._peachOpen = false;
       socket.emit('usePeach', { cardId: el.dataset.cardid });
       overlay.classList.remove('active');
     });
   });
   document.getElementById('peach-decline').addEventListener('click', () => {
+    STATE._peachOpen = false;
     socket.emit('declinePeach', {});
     overlay.classList.remove('active');
   });

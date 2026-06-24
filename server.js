@@ -150,6 +150,10 @@ const CHARACTERS = [
 // ตัวละครที่มี "เอฟเฟคจักรพรรดิ" (เจ้าผู้ครองแคว้น) — ฟิกให้อยู่ในมือจักรพรรดิทุกรอบ
 const LORD_CHARACTERS = ['caocao', 'liubei', 'sunquan'];
 
+// เพศของตัวละคร — ใช้กับเอฟเฟค "ดาบหยินหยาง" (โจมตีเพศตรงข้าม) และทักษะที่ระบุเพศ
+const FEMALE_CHARACTERS = ['zhenji', 'ladygan', 'huangyy', 'sunss', 'daqiao', 'diaochan'];
+function genderOf(charId) { return FEMALE_CHARACTERS.includes(charId) ? 'F' : 'M'; }
+
 // ─── ทักษะที่ "สั่งใช้เองได้" (Active Skills) ────────────────────────────────────
 // ใช้ได้เฉพาะเฟสเล่นการ์ดของเจ้าของตัวละครเท่านั้น (ตรวจเงื่อนไขใน canUseSkill)
 //   needs: 'cards'(เลือกไพ่หลายใบ) | 'card+target'(ไพ่ 1 ใบ + เป้าหมาย) | 'confirm'(กดยืนยัน)
@@ -164,8 +168,13 @@ const ACTIVE_SKILLS = {
 
 // การ์ดที่ใช้ "ตอบโต้" เท่านั้น — ห้ามเล่นเชิงรุกในเฟสเล่นการ์ด
 const RESPONSE_ONLY_CARDS = ['Dodge', 'Negation'];
-// การ์ดกลหน่วงเวลา (ต้องมีเฟสตัดสิน) — ยังไม่รองรับการเล่น
-const UNSUPPORTED_PLAY_CARDS = ['Lightning', 'Overindulgence'];
+// การ์ดกลหน่วงเวลา (วางในช่องตัดสิน — รองรับแล้วผ่านเฟสตัดสิน) — ไม่มีการ์ดที่เล่นไม่ได้แล้ว
+const UNSUPPORTED_PLAY_CARDS = [];
+// การ์ดกลหน่วงเวลา (placed ในช่องตัดสินของเป้าหมาย/ตนเอง)
+const DELAYED_TRICKS = ['Lightning', 'Overindulgence'];
+// การ์ดกลที่ "ขัดขวาง (Negation)" ยกเลิกผลได้ — ใช้เปิดหน้าต่างให้เล่นขัดขวาง
+const NEGATABLE_TRICKS = ['Duel', 'Borrowed Sword', 'Steal', 'Burning Bridges',
+  'Barbarian Invasion', 'Raining Arrows', 'Lightning', 'Overindulgence'];
 
 // ─── ทักษะ Passive ของตัวละคร (ตรวจที่เซิร์ฟเวอร์) ──────────────────────────────────
 const CHAR_PASSIVES = {
@@ -272,6 +281,7 @@ class Room {
         handCount: p.hand.length,
         hand: p.id === forPlayerId ? p.hand : [],
         equipment: p.equipment,
+        judgments: (p.judgments || []).map(c => ({ id: c.id, name: c.name, type: c.type, suit: c.suit, rank: c.rank })),
         status: p.status,
         connected: p.connected,
         isAI: p.isAI,
@@ -447,7 +457,9 @@ class Game {
       p.hp = p.maxHp;
       p.hand = this.drawCards(4);  // แจกการ์ดเริ่มต้น คนละ 4 ใบ
       p.equipment = { weapon: null, armor: null, atkMount: null, defMount: null };
+      p.judgments = [];            // ช่องตัดสิน (การ์ดหน่วงเวลา: สายฟ้า/เสพสุข)
       p.attacksThisTurn = 0;
+      p.skipPlay = false;
     });
 
     this.currentPlayer = 0;  // จักรพรรดิเริ่มก่อน
@@ -565,6 +577,9 @@ class Game {
         this.addLog(player.username, '🩸 ทรมานตัวเอง — เสีย 1 พลังชีวิต จั่ว 2 ใบ');
         player.hand.push(...this.drawCards(2));
         this.dealDamage(player, 1, null);  // อาจเข้าสภาวะใกล้ตาย (dealDamage broadcast ให้แล้ว)
+        // ตายทันที (ไม่มีใครมีเพอช) ระหว่างตาตัวเอง → ส่งตาต่อ
+        if (!this.dyingPlayerId && player.hp <= 0 && this.room.state !== 'ended'
+            && this.room.players[this.currentPlayer]?.id === player.id) this.finishTurn();
         return { ok: true };
       }
       case 'huatuo': {  // ถุงยาเขียว (青囊)
@@ -593,12 +608,84 @@ class Game {
     cur.attacksThisTurn = 0;
     cur.wined = false;
     cur.skillUsed = {};   // รีเซ็ตการใช้ทักษะ (แบบครั้งเดียวต่อตา) ของผู้เล่นคนนี้
+    cur.skipPlay = false;
     this.turn++;
 
     // 1) เตรียมรบ
     this.phase = 'start';
-    // 2) เปิดการ์ดตัดสิน (Judgment) — เคราะห์สายฟ้า/เสพสุข (ฉบับย่อ: ข้าม)
+    // 2) เปิดการ์ดตัดสิน (Judgment) — ตัดสินการ์ดหน่วงเวลา (สายฟ้า/เสพสุข)
     this.phase = 'judge';
+    this.runJudgments(cur);
+  }
+
+  // ─── เฟสตัดสิน — ประมวลผลการ์ดหน่วงเวลาในช่องตัดสินทีละใบ ────────────────────────
+  runJudgments(cur) {
+    while (cur.judgments && cur.judgments.length) {
+      if (cur.hp <= 0 || this.dyingPlayerId) break;
+      const jcard = cur.judgments.shift();
+      this.resolveJudgmentCard(cur, jcard);
+      // สายฟ้าอาจทำให้เข้าสภาวะใกล้ตาย (รอเพอช) — หยุดรอแล้วค่อยทำต่อ
+      if (this.dyingPlayerId) break;
+    }
+    // ถ้ายังรอเพอชจากการตัดสิน (สายฟ้า) ให้หยุดไว้ แล้วต่อเมื่อเคลียร์สภาวะใกล้ตาย
+    if (this.dyingPlayerId === cur.id) { this._resumeTurn = true; return; }
+    this.afterJudgment(cur);
+  }
+
+  // เปิดการ์ดตัดสิน 1 ใบ (จากกอง) แล้วบังคับใช้ผลของการ์ดหน่วงเวลา
+  resolveJudgmentCard(cur, jcard) {
+    const flip = this.drawCards(1)[0];
+    if (flip) this.discardPile.push(flip);
+    const tag = flip ? `${flip.rank}${flip.suit}` : '—';
+
+    if (jcard.name === 'Lightning') {
+      const struck = flip && flip.suit === '♠' && flip.value >= 2 && flip.value <= 9;
+      if (struck) {
+        this.addLog('ระบบ', `⚡ [สายฟ้า] ${cur.username} เปิด ${tag} — ฟ้าผ่า! รับ 3 ความเสียหาย`);
+        this.discardPile.push(jcard);
+        this.dealDamage(cur, 3, null);
+      } else {
+        const nextP = this.nextAlivePlayer(cur);
+        if (nextP && nextP.id !== cur.id) {
+          nextP.judgments = nextP.judgments || [];
+          nextP.judgments.push(jcard);
+          this.addLog('ระบบ', `⚡ [สายฟ้า] ${cur.username} เปิด ${tag} — รอด! สายฟ้าเคลื่อนไปหา ${nextP.username}`);
+        } else {
+          this.discardPile.push(jcard);
+          this.addLog('ระบบ', `⚡ [สายฟ้า] ${cur.username} เปิด ${tag} — รอด! (ไม่มีผู้เล่นถัดไป สายฟ้าสลายตัว)`);
+        }
+      }
+    } else if (jcard.name === 'Overindulgence') {
+      this.discardPile.push(jcard);
+      const escaped = flip && flip.suit === '♥';
+      if (escaped) {
+        this.addLog('ระบบ', `🍵 [เสพสุข] ${cur.username} เปิด ${tag}(♥) — หลุดพ้น เล่นได้ตามปกติ`);
+      } else {
+        cur.skipPlay = true;
+        this.addLog('ระบบ', `🍵 [เสพสุข] ${cur.username} เปิด ${tag} — ติดมัวเมา! ข้ามเฟสเล่นการ์ดในตานี้`);
+      }
+    } else {
+      // การ์ดอื่นในช่องตัดสิน (ไม่ควรเกิด) — ทิ้งทันที
+      this.discardPile.push(jcard);
+    }
+  }
+
+  // ผู้เล่นคนถัดไปที่ยังมีชีวิต (ตามลำดับที่นั่ง) — ใช้กับการเคลื่อนสายฟ้า
+  nextAlivePlayer(from) {
+    const players = this.room.players;
+    const start = players.indexOf(from);
+    for (let i = 1; i <= players.length; i++) {
+      const p = players[(start + i) % players.length];
+      if (p && p.hp > 0 && p.id !== from.id) return p;
+    }
+    return null;
+  }
+
+  // หลังจบเฟสตัดสิน → เข้าเฟสจั่ว (หรือจบตาถ้าตายระหว่างตัดสิน)
+  afterJudgment(cur) {
+    this._resumeTurn = false;
+    if (this.room.state === 'ended') return;
+    if (cur.hp <= 0) return this.finishTurn();   // ตายจากสายฟ้า → ส่งตาต่อ
     // 3) จั่วการ์ด — รอผู้เล่นกดจั่วเอง (ไฮไลท์ที่กองไพ่)
     this.phase = 'draw';
     this.awaitingDraw = true;
@@ -620,6 +707,14 @@ class Game {
     const drawn = this.drawCards(2);
     cur.hand.push(...drawn);
     this.addLog(cur.username, `จั่วการ์ด 2 ใบ${auto ? ' (อัตโนมัติ)' : ''} (มือ ${cur.hand.length} ใบ)`);
+    // เสพสุข (乐不思蜀): ติดมัวเมา → ข้ามเฟสเล่นการ์ด ไปเฟสทิ้ง/จบตาเลย
+    if (cur.skipPlay) {
+      cur.skipPlay = false;
+      this.phase = 'play';
+      this.addLog(cur.username, '🍵 ข้ามเฟสเล่นการ์ด (ติดมัวเมา) — ไปเฟสทิ้งการ์ด');
+      this.broadcast();
+      return this.endTurn(cur.id), { ok: true };
+    }
     // 4) เล่นการ์ด — รอผู้เล่น (เริ่มจับเวลาใหม่สำหรับเฟสเล่น)
     this.phase = 'play';
     this.startTimer();
@@ -673,9 +768,9 @@ class Game {
     const result = this.applyCard(cur, card, target);
     if (!result.ok) return result;
 
-    // นำการ์ดออกจากมือ (อุปกรณ์เข้าช่อง, อื่นๆ เข้ากองทิ้ง)
+    // นำการ์ดออกจากมือ (อุปกรณ์เข้าช่อง, การ์ดหน่วงเวลาเข้าช่องตัดสิน, อื่นๆ เข้ากองทิ้ง)
     cur.hand.splice(cardIdx, 1);
-    if (!['weapon','armor','mount'].includes(card.type)) {
+    if (!['weapon','armor','mount'].includes(card.type) && !result.noDiscard) {
       this.discardPile.push(card);
     }
     if (result.logMsg) this.addLog(cur.username, result.logMsg);
@@ -691,6 +786,44 @@ class Game {
     return { ok: true };
   }
 
+  // ─── ออกการ์ดโจมตี + เอฟเฟคอาวุธที่ทำงานตอนโจมตี (ดาบหยินหยาง/ง้าวฟ้า) ───────────
+  issueAttack(from, target, opts = {}) {
+    const color = opts.color || 'black';
+    const dmg = opts.dmg != null ? opts.dmg : (from.wined ? 2 : 1);
+    from.wined = false;
+    const dodgesNeeded = opts.dodgesNeeded != null ? opts.dodgesNeeded
+      : (CHAR_PASSIVES[from.character]?.needsTwoDodge ? 2 : 1);
+    // ดาบหยินหยาง (阴阳双股剑): โจมตีเพศตรงข้าม → จั่ว 1 ใบ
+    if (from.equipment?.weapon?.name === 'Yin-Yang Swords' && target
+        && genderOf(from.character) !== genderOf(target.character)) {
+      from.hand.push(...this.drawCards(1));
+      this.addLog(from.username, `☯️ [ดาบหยินหยาง/阴阳双股剑] โจมตีเพศตรงข้าม — จั่ว 1 ใบ`);
+    }
+    // ง้าวฟ้า (方天画戟): โจมตีเป็นไพ่ใบสุดท้ายในมือ → กระทบเป้าหมายอื่นในระยะเพิ่มได้ถึง 2
+    if (from.equipment?.weapon?.name === 'Sky Piercing Halberd' && from.hand.length <= 1) {
+      const extra = this.room.players.filter(p => p.hp > 0 && p.id !== from.id
+        && p.id !== target.id && this.inAttackRange(from, p)).slice(0, 2);
+      if (extra.length) {
+        this.addLog(from.username, `🩸 [ง้าวฟ้า/方天画戟] โจมตีไพ่ใบสุดท้าย — กระทบ ${extra.length + 1} เป้าหมาย!`);
+        this.requestGroupResponse('dodge', [target, ...extra], from, 'Attack',
+          { damage: dmg, attackCardColor: color, dodgesNeeded });
+        return;
+      }
+    }
+    this.requestResponse('dodge', target, from, 'Attack', { damage: dmg, attackCardColor: color, dodgesNeeded });
+  }
+
+  // เปิดหน้าต่าง [ขัดขวาง] ถ้าเป้าหมายมีการ์ดขัดขวาง — ไม่งั้นใช้เอฟเฟคทันที
+  maybeNegate(from, target, cardName, effectFn) {
+    if (target.hand.some(c => c.name === 'Negation')) {
+      this.addLog(from.username, `🎯 ใช้ ${cardName} ใส่ ${target.username}`);
+      this.requestResponse('negate', target, from, cardName, { negatable: true, onApply: effectFn });
+      return { ok: true, logMsg: null };
+    }
+    effectFn();
+    return { ok: true, logMsg: null };
+  }
+
   applyCard(from, card, target) {
     // ─── Guan Yu (关羽) passive: any red card = Attack ────────────────────────────
     if (CHAR_PASSIVES[from.character]?.redAsAttack && card.color === 'red' && target && card.name !== 'Attack') {
@@ -701,9 +834,9 @@ class Game {
       if (from.attacksThisTurn >= 1 && !_unlimited) return { ok: false, msg: 'โจมตีได้เพียง 1 ครั้งต่อตา' };
       if (!this.inAttackRange(from, target)) return { ok: false, msg: `เป้าหมายอยู่นอกระยะโจมตี` };
       from.attacksThisTurn++;
-      const _dmg = from.wined ? 2 : 1; from.wined = false;
+      const _dmg = from.wined ? 2 : 1;
       this.addLog(from.username, `⚔️ [กวนอู] ${card.name}(♥♦) → โจมตี ${target.username}${_dmg > 1 ? ' 🍶+1' : ''}`);
-      this.requestResponse('dodge', target, from, 'Attack', { damage: _dmg, attackCardColor: card.color, dodgesNeeded: 1 });
+      this.issueAttack(from, target, { color: card.color, dmg: _dmg, dodgesNeeded: 1 });
       return { ok: true, logMsg: null };
     }
 
@@ -719,10 +852,10 @@ class Game {
         if (!this.inAttackRange(from, target))
           return { ok: false, msg: `เป้าหมายอยู่นอกระยะโจมตี (ระยะ ${this.distance(from,target)} > ${this.attackRange(from)})` };
         from.attacksThisTurn++;
-        const dmg = from.wined ? 2 : 1; from.wined = false;
+        const dmg = from.wined ? 2 : 1;
         const dodgesNeeded = CHAR_PASSIVES[from.character]?.needsTwoDodge ? 2 : 1;
         this.addLog(from.username, `⚔️ โจมตี ${target.username}${dmg > 1 ? ' 🍶+1' : ''}${dodgesNeeded > 1 ? ' (ต้องหลบ 2 ครั้ง!)' : ''}`);
-        this.requestResponse('dodge', target, from, 'Attack', { damage: dmg, attackCardColor: card.color, dodgesNeeded });
+        this.issueAttack(from, target, { color: card.color, dmg, dodgesNeeded });
         return { ok: true, logMsg: null };
       }
 
@@ -741,9 +874,10 @@ class Game {
       case 'Duel': {
         if (!target) return { ok: false, msg: 'ต้องเลือกเป้าหมาย' };
         if (target.id === from.id) return { ok: false, msg: 'ท้าดวลตัวเองไม่ได้' };
-        // ฉบับย่อ: เป้าหมายต้องตอบด้วยการ์ดโจมตี มิฉะนั้นเสีย 1 พลังชีวิต
+        if (target.hp <= 0) return { ok: false, msg: 'เป้าหมายถูกกำจัดแล้ว' };
+        // เป้าหมายผลัดกันเล่นโจมตีกับผู้ใช้ ใครเล่นไม่ได้ก่อนเสีย 1 พลังชีวิต
         this.addLog(from.username, `⚔️ ท้าดวล ${target.username}`);
-        this.requestResponse('duel', target, from, 'Duel', { damage: 1 });
+        this.requestResponse('duel', target, from, 'Duel', { damage: 1, negatable: true });
         return { ok: true, logMsg: null };
       }
 
@@ -754,10 +888,14 @@ class Game {
           return { ok: false, msg: `${target.username} ไม่สามารถถูกขโมยได้ (ลู่ซุ่น: ศักดิ์ศรีแห่งน้ำ)` };
         if (!CHAR_PASSIVES[from.character]?.unlimitedTrickRange && this.distance(from, target) > 1)
           return { ok: false, msg: 'เป้าหมายต้องอยู่ในระยะ 1' };
-        const loot = this.takeOneCard(target);
-        if (!loot) return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
-        from.hand.push(loot);
-        return { ok: true, logMsg: `🃏 ขโมยการ์ดจาก ${target.username}` };
+        if (target.hand.length === 0 && !Object.values(target.equipment).some(Boolean))
+          return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
+        const doSteal = () => {
+          const loot = this.takeOneCard(target);
+          if (loot) { from.hand.push(loot); this.addLog(from.username, `🃏 ขโมยการ์ดจาก ${target.username}`); }
+          else this.addLog(from.username, `🃏 ขโมย ${target.username} — แต่ไม่มีการ์ดให้ริบแล้ว`);
+        };
+        return this.maybeNegate(from, target, 'Steal', doSteal);
       }
 
       case 'Burning Bridges': {
@@ -765,17 +903,25 @@ class Game {
         if (target.id === from.id) return { ok: false, msg: 'เลือกตัวเองไม่ได้' };
         if (!CHAR_PASSIVES[from.character]?.unlimitedTrickRange && this.distance(from, target) > 1)
           return { ok: false, msg: 'เป้าหมายต้องอยู่ในระยะ 1' };
-        const removed = this.takeOneCard(target);
-        if (!removed) return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
-        this.discardPile.push(removed);
-        return { ok: true, logMsg: `🔥 ทำลายการ์ดของ ${target.username}` };
+        if (target.hand.length === 0 && !Object.values(target.equipment).some(Boolean))
+          return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
+        const doBurn = () => {
+          const removed = this.takeOneCard(target);
+          if (removed) { this.discardPile.push(removed); this.addLog(from.username, `🔥 ทำลายการ์ดของ ${target.username}`); }
+          else this.addLog(from.username, `🔥 ทำลายสะพาน ${target.username} — แต่ไม่มีการ์ดแล้ว`);
+        };
+        return this.maybeNegate(from, target, 'Burning Bridges', doBurn);
       }
 
       case 'Borrowed Sword': {
+        // ยืมดาบสังหาร (借刀杀人): บังคับเป้าหมายที่ "มีอาวุธ" ให้โจมตีผู้ใช้
+        // ถ้าไม่ยอมโจมตี (เล่นโจมตีไม่ได้/ไม่เล่น) → ผู้ใช้ริบอาวุธของเป้าหมาย
         if (!target) return { ok: false, msg: 'ต้องเลือกเป้าหมาย' };
-        // ฉบับย่อ: ทำความเสียหาย 1 (ยืมดาบสังหาร)
-        this.addLog(from.username, `🗡️ ยืมดาบโจมตี ${target.username}`);
-        this.requestResponse('dodge', target, from, 'Borrowed Sword', { damage: 1 });
+        if (target.id === from.id) return { ok: false, msg: 'เลือกตัวเองไม่ได้' };
+        if (!target.equipment?.weapon)
+          return { ok: false, msg: 'เป้าหมายต้องมีอาวุธจึงจะ "ยืมดาบ" ได้' };
+        this.addLog(from.username, `🗡️ ยืมดาบ — บังคับ ${target.username} โจมตี ${from.username} มิฉะนั้นเสียอาวุธ`);
+        this.requestResponse('borrow', target, from, 'Borrowed Sword', { damage: 1, negatable: true });
         return { ok: true, logMsg: null };
       }
 
@@ -786,7 +932,7 @@ class Game {
         const victims = this.room.players.filter(p => p.id !== from.id && p.hp > 0);
         const label = card.name === 'Raining Arrows' ? '🏹 ฝนลูกธนูถล่มทุกคน' : '⚔️ บุกทะลวงอนารยชน';
         this.addLog(from.username, label);
-        this.requestGroupResponse(need, victims, from, card.name, { damage: 1 });
+        this.requestGroupResponse(need, victims, from, card.name, { damage: 1, negatable: true });
         return { ok: true, logMsg: null };
       }
 
@@ -819,6 +965,27 @@ class Game {
       case 'Something Out of Nothing': {
         from.hand.push(...this.drawCards(2));
         return { ok: true, logMsg: `✨ สร้างจากความว่างเปล่า — จั่ว 2 ใบ` };
+      }
+
+      case 'Lightning': {
+        // วางในช่องตัดสินของตน — มีได้ครั้งละ 1 ใบ
+        from.judgments = from.judgments || [];
+        if (from.judgments.some(c => c.name === 'Lightning'))
+          return { ok: false, msg: 'มีสายฟ้าวางอยู่หน้าคุณแล้ว' };
+        from.judgments.push(card);
+        return { ok: true, noDiscard: true, logMsg: `⚡ วางสายฟ้าหน้าตน — จะตัดสินช่วงต้นตาถัดไป (♠2-9 = ฟ้าผ่า 3 ดาเมจ)` };
+      }
+
+      case 'Overindulgence': {
+        if (!target) return { ok: false, msg: 'ต้องเลือกเป้าหมาย' };
+        if (target.id === from.id) return { ok: false, msg: 'ใช้เสพสุขกับตัวเองไม่ได้' };
+        if (CHAR_PASSIVES[target.character]?.immuneToOverindulgence)
+          return { ok: false, msg: `${target.username} ไม่ติดมัวเมาได้ (ลู่ซุ่น: ความถ่อมตน)` };
+        target.judgments = target.judgments || [];
+        if (target.judgments.some(c => c.name === 'Overindulgence'))
+          return { ok: false, msg: 'เป้าหมายติดมัวเมาอยู่แล้ว' };
+        target.judgments.push(card);
+        return { ok: true, noDiscard: true, logMsg: `🍵 ใช้เสพสุขใส่ ${target.username} — เขาจะตัดสินช่วงต้นตา (ไม่ใช่ ♥ = ข้ามเฟสเล่น)` };
       }
 
       default: {
@@ -915,7 +1082,8 @@ class Game {
     this.broadcast();
   }
 
-  // ─── ระบบตอบโต้ (หลบหลีก / โต้ดวล) ──────────────────────────────────────────
+  // ─── ระบบตอบโต้ (หลบหลีก / โต้ดวล / โจมตีกลับ / ขัดขวาง) ─────────────────────
+  //   type: dodge=หลบโจมตี · duel=ท้าดวล(สลับกัน) · borrow=ยืมดาบ · avoidatk=เล่นโจมตีกันดาเมจ · negate=ขัดขวางล้วน
   requestResponse(type, responder, source, cardName, payload = {}) {
     this.pending = { type, responderId: responder.id, sourceId: source.id, cardName, payload };
     clearInterval(this.timerInterval);
@@ -929,8 +1097,10 @@ class Game {
       }
     }, 1000);
 
-    // ── เช็คเกราะ passive ก่อนถามผู้เล่น ──
-    if (type === 'dodge') {
+    // ── เช็คเกราะ passive ก่อนถามผู้เล่น (เฉพาะการหลบโจมตีจริง) ──
+    // ดาบฟ้า (青钢剑) ของผู้โจมตี = ไม่สนเกราะของเป้าหมาย
+    const ignoreArmor = source?.equipment?.weapon?.name === 'Blue Steel Sword';
+    if (type === 'dodge' && !ignoreArmor) {
       // Nio Shield (仁王盾): บล็อกการโจมตีสีดำอัตโนมัติ
       if (responder.equipment?.armor?.name === 'Nio Shield' && payload.attackCardColor === 'black') {
         this.addLog(responder.username, '🛡️ [ยันต์สวรรค์/仁王盾] บล็อกโจมตีสีดำอัตโนมัติ!');
@@ -948,6 +1118,8 @@ class Game {
           this.addLog(responder.username, `🔮 [八卦阵] กลับ ${topCard.name}(ดำ) — ต้องเล่นการ์ดหลบเอง`);
         }
       }
+    } else if (type === 'dodge' && ignoreArmor && responder.equipment?.armor) {
+      this.addLog(source.username, `🗡️ [ดาบฟ้า/青钢剑] โจมตีทะลุเกราะของ ${responder.username}`);
     }
 
     // บอก client ว่าการ์ดประเภทไหนอีกที่ใช้ตอบโต้ได้ (passive ตัวละคร)
@@ -955,27 +1127,47 @@ class Game {
     if (type === 'dodge') {
       if (CHAR_PASSIVES[responder.character]?.attackAsDodge) alsoAccept.push('Attack');
       if (CHAR_PASSIVES[responder.character]?.blackAsDodge) alsoAccept.push('_black');
-    } else if (type === 'duel') {
+    } else if (type === 'duel' || type === 'borrow' || type === 'avoidatk') {
       if (CHAR_PASSIVES[responder.character]?.dodgeAsAttack) alsoAccept.push('Dodge');
     }
+    // ขัดขวาง (无懈可击): การ์ดกล negatable + มี [ขัดขวาง] ในมือ → เล่นยกเลิกผลได้
+    const canNegate = !!payload.negatable && responder.hand.some(c => c.name === 'Negation');
+    if (canNegate) alsoAccept.push('Negation');
 
-    const need = type === 'duel' ? 'Attack' : 'Dodge';
+    const need = (type === 'duel' || type === 'borrow' || type === 'avoidatk') ? 'Attack'
+      : (type === 'negate') ? 'Negation' : 'Dodge';
+    const msg = type === 'duel'   ? `${source.username} ท้าดวลคุณ! เล่นการ์ดโจมตี หรือเสีย 1 พลังชีวิต`
+      : type === 'borrow'   ? `${source.username} ใช้ "ยืมดาบ" — เล่นการ์ดโจมตีใส่ ${source.username} มิฉะนั้นเสียอาวุธของคุณ`
+      : type === 'avoidatk' ? `${source.username} ใช้ ${cardName} — เล่นการ์ดโจมตี มิฉะนั้นรับความเสียหาย`
+      : type === 'negate'   ? `${source.username} ใช้ ${cardName} ใส่คุณ! เล่น [ขัดขวาง] เพื่อยกเลิก หรือปล่อยผ่าน`
+      : `${source.username} ใช้ ${cardName} ใส่คุณ! เล่นการ์ดหลบหลีก หรือรับความเสียหาย`;
+
     const sock = io.sockets.sockets.get(responder.socketId);
     if (sock) sock.emit('awaitResponse', {
-      type, need, cardName, alsoAccept,
+      type, need, cardName, alsoAccept, canNegate,
       dodgesNeeded: payload.dodgesNeeded || 1,
-      from: source.username,
-      msg: type === 'duel'
-        ? `${source.username} ท้าดวลคุณ! เล่นการ์ดโจมตี หรือเสีย 1 พลังชีวิต`
-        : `${source.username} ใช้ ${cardName} ใส่คุณ! เล่นการ์ดหลบหลีก หรือรับความเสียหาย`,
+      from: source.username, msg,
     });
+    this.broadcast();
+  }
+
+  // ดำเนินเกมต่อหลังจบการตอบโต้ 1 ครั้ง (มีคิวกลุ่ม → คนต่อไป, ไม่งั้นกลับสู่เฟสเล่น)
+  _continueAfterResponse() {
+    if (this.dyingPlayerId) return;            // รอเพอชอยู่ — อย่าเพิ่งเดินต่อ
+    if (this.groupQueue) { this.nextGroupResponse(); return; }
+    if (this.room.state === 'ended') return;
+    const cur = this.room.players[this.currentPlayer];
+    if (!cur || cur.hp <= 0) return this.finishTurn();  // ผู้เล่นปัจจุบันตาย → ส่งตาต่อ
+    this.phase = 'play';
+    this.startTimer();
     this.broadcast();
   }
 
   // เวอร์ชันกระทบหลายคน — เก็บคิวแล้วถามทีละคน
   requestGroupResponse(type, victims, source, cardName, payload) {
     this.groupQueue = victims.map(v => v.id);
-    this.groupType = type === 'attack-resp' ? 'duel' : 'dodge';
+    // attack-resp = เล่นโจมตีกันดาเมจ (ไม่ใช่ดวลแบบสลับกัน)
+    this.groupType = type === 'attack-resp' ? 'avoidatk' : 'dodge';
     this.groupSource = source.id;
     this.groupCard = cardName;
     this.groupPayload = payload;
@@ -1011,7 +1203,38 @@ class Game {
     const { type, payload, cardName } = this.pending;
     const dodgesNeeded = payload.dodgesNeeded || 1;
 
+    // ── ขัดขวาง (无懈可击): การ์ดกล negatable → ยกเลิกผลทั้งหมด ──
+    if (!autoDefend && cardId && payload.negatable) {
+      const ni = responder.hand.findIndex(c => c.id === cardId && c.name === 'Negation');
+      if (ni >= 0) {
+        const used = responder.hand.splice(ni, 1)[0];
+        this.discardPile.push(used);
+        this.addLog(responder.username, `🚫 ขัดขวาง (无懈可击) — ยกเลิกผลของ ${cardName}!`);
+        this.pending = null;
+        return this._continueAfterResponse(), { ok: true };
+      }
+    }
+
+    // ── หน้าต่างขัดขวางล้วน (ขโมย/ทำลายสะพาน) — เล่นขัดขวาง หรือปล่อยให้เอฟเฟคทำงาน ──
+    if (type === 'negate') {
+      let negated = false;
+      if (!autoDefend && cardId) {
+        const ni = responder.hand.findIndex(c => c.id === cardId && c.name === 'Negation');
+        if (ni >= 0) {
+          const u = responder.hand.splice(ni, 1)[0];
+          this.discardPile.push(u);
+          negated = true;
+          this.addLog(responder.username, `🚫 ขัดขวาง — ยกเลิกผลของ ${cardName}!`);
+        }
+      }
+      this.pending = null;
+      if (!negated && typeof payload.onApply === 'function') payload.onApply();
+      return this._continueAfterResponse(), { ok: true };
+    }
+
+    // ── ตอบโต้ด้วยการ์ด (หลบหลีก / โจมตี) ──
     let defended = autoDefend;
+    let usedCard = null;
     if (!autoDefend && cardId) {
       const idx = responder.hand.findIndex(c => c.id === cardId);
       if (idx >= 0) {
@@ -1021,106 +1244,228 @@ class Game {
           cardCounts = card.name === 'Dodge'
             || (CHAR_PASSIVES[responder.character]?.attackAsDodge && card.name === 'Attack')
             || (CHAR_PASSIVES[responder.character]?.blackAsDodge && card.color === 'black');
-        } else if (type === 'duel') {
+        } else if (type === 'duel' || type === 'borrow' || type === 'avoidatk') {
           cardCounts = card.name === 'Attack'
             || (CHAR_PASSIVES[responder.character]?.dodgeAsAttack && card.name === 'Dodge');
         }
         if (cardCounts) {
-          const used = responder.hand.splice(idx, 1)[0];
-          this.discardPile.push(used);
+          usedCard = responder.hand.splice(idx, 1)[0];
+          this.discardPile.push(usedCard);
           defended = true;
-          this.addLog(responder.username, type === 'duel' ? `⚔️ โต้ดวล (${used.name})` : `🛡️ หลบหลีกสำเร็จ (${used.name})`);
+          this.addLog(responder.username, type === 'dodge' ? `🛡️ หลบหลีกสำเร็จ (${usedCard.name})` : `⚔️ เล่น ${usedCard.name}`);
         }
       }
     }
 
     this.pending = null;
 
+    // ── ยืมดาบ (借刀杀人) ──
+    if (type === 'borrow') {
+      if (defended) {
+        // เป้าหมายยอมใช้ดาบโจมตีผู้ใช้ → ผู้ใช้ต้องหลบ
+        this.addLog(responder.username, `🗡️ ${responder.username} ใช้ดาบโจมตี ${source.username}!`);
+        const dn = CHAR_PASSIVES[responder.character]?.needsTwoDodge ? 2 : 1;
+        this.requestResponse('dodge', source, responder, 'Attack',
+          { damage: payload.damage, attackCardColor: usedCard?.color || 'black', dodgesNeeded: dn });
+        return { ok: true };
+      }
+      const wp = responder.equipment?.weapon;
+      if (wp) {
+        responder.equipment.weapon = null;
+        source.hand.push(wp);
+        this.addLog(source.username, `🗡️ ยืมดาบสำเร็จ — ริบอาวุธ "${wp.name}" จาก ${responder.username}`);
+      } else {
+        this.addLog(source.username, `🗡️ ยืมดาบ — ${responder.username} ไม่มีอาวุธให้ริบแล้ว`);
+      }
+      return this._continueAfterResponse(), { ok: true };
+    }
+
+    // ── ท้าดวล (决斗): สลับกันโจมตีจนมีฝ่ายเล่นไม่ได้ ──
     if (type === 'duel') {
       if (defended) {
-        // สลับตัว: source ต้องเล่นโจมตีตอบกลับ — โดยไม่จำกัดรอบ
         this.addLog(source.username, `↩️ ${responder.username} โต้! ตอนนี้ ${source.username} ต้องโจมตี`);
         this.requestResponse('duel', source, responder, 'Duel', { damage: payload.damage });
         return { ok: true };
       }
       this.dealDamage(responder, payload.damage, source);
-    } else {
-      if (!defended) {
-        this.addLog(responder.username, '💢 ไม่ได้หลบ — รับความเสียหาย');
-        // Kirin Bow (麒麟弓): เมื่อโจมตีโดน ทำลายม้าของเป้าหมาย
-        if (source?.equipment?.weapon?.name === 'Kirin Bow') {
-          const mountSlot = responder.equipment?.atkMount ? 'atkMount' : (responder.equipment?.defMount ? 'defMount' : null);
-          if (mountSlot) {
-            const mount = responder.equipment[mountSlot];
-            responder.equipment[mountSlot] = null;
-            this.discardPile.push(mount);
-            this.addLog(source.username, `🏹 [Kirin Bow] ทำลายม้าของ ${responder.username}: ${mount.name}`);
-          }
+      if (!this.dyingPlayerId) this._continueAfterResponse();
+      return { ok: true };
+    }
+
+    // ── เล่นโจมตีเพื่อกันดาเมจ (南蛮入侵) — ไม่มีการสลับ ──
+    if (type === 'avoidatk') {
+      if (!defended) this.dealDamage(responder, payload.damage, source);
+      else this.addLog(responder.username, `⚔️ เล่นโจมตีกันได้ — ไม่รับความเสียหาย`);
+      if (!this.dyingPlayerId) this._continueAfterResponse();
+      return { ok: true };
+    }
+
+    // ── หลบโจมตี (dodge) ──
+    if (!defended) {
+      this.addLog(responder.username, '💢 ไม่ได้หลบ — รับความเสียหาย');
+      // Frost Sword (冰封剑): แทนการทำดาเมจ → ให้เป้าหมายทิ้งการ์ด 2 ใบ
+      if (source?.equipment?.weapon?.name === 'Frost Sword' && responder.hand.length >= 2 && responder.hp > 1) {
+        const lost = [responder.hand.pop(), responder.hand.pop()];
+        lost.forEach(c => this.discardPile.push(c));
+        this.addLog(source.username, `❄️ [ดาบน้ำแข็ง/冰封剑] ยกเลิกดาเมจ — ${responder.username} ทิ้งการ์ด 2 ใบแทน`);
+        if (!this.dyingPlayerId) this._continueAfterResponse();
+        return { ok: true };
+      }
+      // Kirin Bow (麒麟弓): เมื่อโจมตีโดน ทำลายม้าของเป้าหมาย
+      if (source?.equipment?.weapon?.name === 'Kirin Bow') {
+        const mountSlot = responder.equipment?.atkMount ? 'atkMount' : (responder.equipment?.defMount ? 'defMount' : null);
+        if (mountSlot) {
+          const mount = responder.equipment[mountSlot];
+          responder.equipment[mountSlot] = null;
+          this.discardPile.push(mount);
+          this.addLog(source.username, `🏹 [ธนูกิเลน/麒麟弓] ทำลายม้าของ ${responder.username}: ${mount.name}`);
         }
-        this.dealDamage(responder, payload.damage, source);
-      } else if (dodgesNeeded > 1) {
-        // Lv Bu (吕布): ต้องหลบ 2 ครั้ง
-        this.addLog(responder.username, `🛡️ หลบ 1/${dodgesNeeded} — ต้องหลบอีก ${dodgesNeeded - 1} ครั้ง`);
-        this.requestResponse('dodge', responder, source, cardName, { ...payload, dodgesNeeded: dodgesNeeded - 1 });
+      }
+      this.dealDamage(responder, payload.damage, source);
+      if (!this.dyingPlayerId) this._continueAfterResponse();
+      return { ok: true };
+    }
+
+    // หลบสำเร็จ — แต่ Lv Bu (无双) บังคับหลบ 2 ครั้ง
+    if (dodgesNeeded > 1) {
+      this.addLog(responder.username, `🛡️ หลบ 1/${dodgesNeeded} — ต้องหลบอีก ${dodgesNeeded - 1} ครั้ง`);
+      this.requestResponse('dodge', responder, source, cardName, { ...payload, dodgesNeeded: dodgesNeeded - 1 });
+      return { ok: true };
+    }
+    // Green Dragon Blade (青龙偃月刀): โจมตีถูกหลบ → ใช้โจมตีอีกใบโจมตีซ้ำอัตโนมัติ
+    if (source?.equipment?.weapon?.name === 'Green Dragon Blade' && !payload.gdbDone) {
+      const ai = source.hand.findIndex(c => c.name === 'Attack');
+      if (ai >= 0) {
+        const atk = source.hand.splice(ai, 1)[0];
+        this.discardPile.push(atk);
+        this.addLog(source.username, `🐉 [ง้าวมังกรเขียว/青龙偃月刀] ${responder.username} หลบได้ — โจมตีซ้ำอีกครั้ง!`);
+        const dn = CHAR_PASSIVES[source.character]?.needsTwoDodge ? 2 : 1;
+        this.requestResponse('dodge', responder, source, 'Attack',
+          { damage: payload.damage, attackCardColor: atk.color, dodgesNeeded: dn, gdbDone: true });
         return { ok: true };
       }
     }
-
-    // ดำเนินเกมต่อ
-    if (this.groupQueue) {
-      this.nextGroupResponse();
-    } else if (this.room.state !== 'ended') {
-      this.phase = 'play';
-      this.startTimer();
-      this.broadcast();
+    // Rock Cleaving Axe (贯石斧): โจมตีถูกหลบ → ทิ้ง 2 ใบบังคับดาเมจ (อัตโนมัติเมื่อเป้าหมายใกล้ตาย)
+    if (source?.equipment?.weapon?.name === 'Rock Cleaving Axe' && responder.hp <= 2 && source.hand.length >= 2) {
+      const lost = [source.hand.pop(), source.hand.pop()];
+      lost.forEach(c => this.discardPile.push(c));
+      this.addLog(source.username, `🪓 [ขวานผ่าหิน/贯石斧] ทิ้งการ์ด 2 ใบ — บังคับดาเมจทะลุการหลบ!`);
+      this.dealDamage(responder, payload.damage, source);
     }
+    if (!this.dyingPlayerId) this._continueAfterResponse();
     return { ok: true };
   }
 
-  // ─── ทำความเสียหาย + ตรวจการตาย ─────────────────────────────────────────────
+  // ─── ทำความเสียหาย + ตรวจการตาย ── คืน true ถ้าเข้าสภาวะใกล้ตาย ─────────────────
   dealDamage(player, amount, source) {
     player.hp -= amount;
     this.addLog('ระบบ', `💔 ${player.username} เสีย ${amount} พลังชีวิต (เหลือ ${Math.max(0,player.hp)})`);
-    if (player.hp <= 0) this.enterDying(player, source);
+    if (player.hp <= 0) { this.enterDying(player, source); return true; }
     this.broadcast();
+    return false;
   }
 
-  // เข้าสู่สภาวะใกล้ตาย — เปิดให้ใช้เพอชช่วย
+  // เข้าสู่สภาวะใกล้ตาย — ขอ [เพอช] จากทุกคนตามลำดับ (ตัวเองก่อน แล้วไล่ตามที่นั่ง)
   enterDying(player, source) {
-    player.hp = 0;
-    this.addLog('ระบบ', `⚠️ ${player.username} ใกล้ตาย! ใครก็ได้ใช้เพอชช่วยได้`);
-    // ฉบับย่อแบบเรียลไทม์: ตรวจอัตโนมัติว่ามีใครอยากใช้เพอชไหม ผ่านหน้าต่างคำขอ
-    // เพื่อความเรียบง่ายและไม่ค้างเกม: ผู้เล่นที่ใกล้ตายใช้เพอชเองอัตโนมัติถ้ามี
-    const peachIdx = player.hand.findIndex(c => c.name === 'Peach');
-    if (peachIdx >= 0) {
-      const sock = io.sockets.sockets.get(player.socketId);
-      if (sock) sock.emit('askPeach', { msg: 'คุณใกล้ตาย! ใช้เพอชเพื่อรอดหรือไม่?' });
-      // ตั้งสถานะ dying ให้ client เลือก
-      this.dyingPlayerId = player.id;
-      return;
+    if (player.hp > 0) player.hp = 0;
+    this.addLog('ระบบ', `⚠️ ${player.username} ใกล้ตาย! ใครก็ได้ที่มี [เพอช] ใช้ช่วยได้`);
+    const players = this.room.players;
+    const order = [player.id];
+    const startIdx = players.indexOf(player);
+    for (let i = 1; i <= players.length; i++) {
+      const p = players[(startIdx + i) % players.length];
+      if (p && p.hp > 0 && p.id !== player.id) order.push(p.id);
     }
-    this.killPlayer(player, source);
+    this.dying = { playerId: player.id, sourceId: source?.id || null, order, idx: 0 };
+    this.dyingPlayerId = player.id;
+    this._dyingAsync = false;   // true เมื่อมีการเปิดหน้าต่างถามเพอช (รอ async)
+    this.promptDyingSave();
   }
 
-  usePeachToSave(playerId, cardId) {
-    const player = this.room.players.find(p => p.id === playerId);
-    if (!player || this.dyingPlayerId !== playerId) return { ok: false };
-    const idx = player.hand.findIndex(c => c.id === cardId && c.name === 'Peach');
+  // ถามผู้ช่วยคนถัดไปที่มี [เพอช] — รอดเมื่อ hp>0, ตายเมื่อหมดคิว
+  promptDyingSave() {
+    const d = this.dying;
+    if (!d) return;
+    const dying = this.room.players.find(p => p.id === d.playerId);
+    if (!dying) { this.dying = null; this.dyingPlayerId = null; return; }
+    if (dying.hp > 0) return this.finishDying(true);
+    while (d.idx < d.order.length) {
+      const saver = this.room.players.find(p => p.id === d.order[d.idx]);
+      if (saver && saver.hp > 0 && saver.hand.some(c => c.name === 'Peach')) {
+        clearInterval(this.dyingTimer);
+        this._dyingAsync = true;
+        this.timer = 20;
+        this.dyingTimer = setInterval(() => {
+          this.timer--;
+          io.to(this.room.code).emit('timerTick', this.timer);
+          if (this.timer <= 0) { clearInterval(this.dyingTimer); this.declinePeach(saver.id); }
+        }, 1000);
+        const sock = io.sockets.sockets.get(saver.socketId);
+        if (sock) sock.emit('askPeach', {
+          forId: d.playerId,
+          msg: saver.id === d.playerId
+            ? 'คุณใกล้ตาย! ใช้ [เพอช] เพื่อรอดหรือไม่?'
+            : `${dying.username} ใกล้ตาย! ใช้ [เพอช] ช่วยหรือไม่?`,
+        });
+        this.broadcast();
+        return;
+      }
+      d.idx++;
+    }
+    this.finishDying(false);
+  }
+
+  // ผู้ช่วย (ตัวเองหรือคนอื่น) ใช้ [เพอช] กับผู้ใกล้ตาย
+  usePeachToSave(saverId, cardId) {
+    const d = this.dying;
+    if (!d) return { ok: false, msg: 'ตอนนี้ไม่มีใครใกล้ตาย' };
+    if (d.order[d.idx] !== saverId) return { ok: false, msg: 'ยังไม่ถึงตาคุณใช้เพอช' };
+    const saver = this.room.players.find(p => p.id === saverId);
+    if (!saver) return { ok: false };
+    const idx = saver.hand.findIndex(c => c.id === cardId && c.name === 'Peach');
     if (idx < 0) return { ok: false, msg: 'ไม่มีเพอช' };
-    player.hand.splice(idx, 1).forEach(c => this.discardPile.push(c));
-    player.hp = 1;
-    this.dyingPlayerId = null;
-    this.addLog(player.username, '🍑 ใช้เพอชรอดตายอย่างหวุดหวิด!');
-    this.broadcast();
+    saver.hand.splice(idx, 1).forEach(c => this.discardPile.push(c));
+    const dying = this.room.players.find(p => p.id === d.playerId);
+    dying.hp = Math.min(dying.maxHp, dying.hp + 1);
+    this.addLog(saver.username, saver.id === dying.id
+      ? '🍑 ใช้เพอชช่วยตัวเองรอดตายอย่างหวุดหวิด!'
+      : `🍑 ใช้เพอชช่วย ${dying.username} ให้รอดตาย!`);
+    clearInterval(this.dyingTimer);
+    this.promptDyingSave();
     return { ok: true };
   }
 
-  declinePeach(playerId) {
-    const player = this.room.players.find(p => p.id === playerId);
-    if (!player || this.dyingPlayerId !== playerId) return;
+  // ผู้ช่วยคนปัจจุบันปฏิเสธ → ถามคนถัดไป
+  declinePeach(saverId) {
+    const d = this.dying;
+    if (!d || d.order[d.idx] !== saverId) return;
+    d.idx++;
+    clearInterval(this.dyingTimer);
+    this.promptDyingSave();
+  }
+
+  // จบสภาวะใกล้ตาย — รอด (survived) หรือ ตาย
+  //   wasAsync=true → เปิดหน้าต่างถามเพอชไปแล้ว ต้องขับเคลื่อนเดินเกมต่อเอง
+  //   wasAsync=false → ตายทันที(ไม่มีใครมีเพอช) ปล่อยให้ผู้เรียก (resolveResponse/runJudgments) เดินต่อ
+  finishDying(survived) {
+    clearInterval(this.dyingTimer);
+    const d = this.dying;
+    const wasAsync = this._dyingAsync;
+    this.dying = null;
     this.dyingPlayerId = null;
-    this.killPlayer(player, null);
-    this.broadcast();
+    this._dyingAsync = false;
+    if (!d) return;
+    const player = this.room.players.find(p => p.id === d.playerId);
+    if (!survived && player) {
+      const source = d.sourceId ? this.room.players.find(p => p.id === d.sourceId) : null;
+      this.killPlayer(player, source);
+    }
+    if (!wasAsync) { this.broadcast(); return; }   // โหมด sync — ผู้เรียกจะเดินเกมต่อเอง
+    if (this.room.state === 'ended') { this.broadcast(); return; }
+    const cur = this.room.players[this.currentPlayer];
+    // ใกล้ตายระหว่างเฟสตัดสิน (สายฟ้า) ของผู้เล่นปัจจุบัน → ต่อด้วยเฟสจั่ว/จบตา
+    if (this._resumeTurn && cur && cur.id === d.playerId) return this.afterJudgment(player);
+    this._continueAfterResponse();
   }
 
   killPlayer(player, source) {
