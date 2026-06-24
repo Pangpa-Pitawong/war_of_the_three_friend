@@ -153,6 +153,7 @@ const LORD_CHARACTERS = ['caocao', 'liubei', 'sunquan'];
 // เพศของตัวละคร — ใช้กับเอฟเฟค "ดาบหยินหยาง" (โจมตีเพศตรงข้าม) และทักษะที่ระบุเพศ
 const FEMALE_CHARACTERS = ['zhenji', 'ladygan', 'huangyy', 'sunss', 'daqiao', 'diaochan'];
 function genderOf(charId) { return FEMALE_CHARACTERS.includes(charId) ? 'F' : 'M'; }
+function kingdomOf(charId) { return (CHARACTERS.find(c => c.id === charId) || {}).kingdom || null; }
 
 // ─── ทักษะที่ "สั่งใช้เองได้" (Active Skills) ────────────────────────────────────
 // ใช้ได้เฉพาะเฟสเล่นการ์ดของเจ้าของตัวละครเท่านั้น (ตรวจเงื่อนไขใน canUseSkill)
@@ -164,6 +165,16 @@ const ACTIVE_SKILLS = {
               desc: 'เสีย HP 1 หน่วยเพื่อจั่วการ์ด 2 ใบ' },
   huatuo:   { key: 'qingnang', name: 'หมอผู้เมตตา (青囊)',   needs: 'card+target', oncePerTurn: true,
               desc: 'จำกัด 1 ครั้งต่อช่วงเล่นการ์ด ทิ้งการ์ด 1 ใบจากมือเพื่อให้ตัวละครที่บาดเจ็บฟื้น HP 1 หน่วย' },
+  liubei:   { key: 'rende',    name: 'เมตตาธรรม (仁德)',  needs: 'cards+target', oncePerTurn: false,
+              desc: 'มอบการ์ดในมือจำนวนเท่าใดก็ได้ให้ตัวละครอื่น — ฟื้น HP 1 หน่วยถ้ามอบรวม 2 ใบขึ้นไปในตานี้ (ครั้งเดียว)' },
+  ladygan:  { key: 'shushen',  name: 'ปัญญาประเสริฐ (淑慎)', needs: 'confirm', oncePerTurn: true,
+              desc: 'ทิ้งการ์ดในมือทั้งหมด — ฟื้น HP 1 หน่วยถ้าจำนวนที่ทิ้งมากกว่า HP ปัจจุบัน' },
+  sunss:    { key: 'jieyin',   name: 'การสมรส (结姻)',   needs: 'cards+target', oncePerTurn: true,
+              desc: 'ทิ้งการ์ด 2 ใบจากมือ เลือกตัวละครชายที่บาดเจ็บ — ทั้งคุณและเขาฟื้น HP 1 หน่วย' },
+  diaochan: { key: 'lijian',   name: 'เสน่ห์มารยา (离间)',  needs: 'card+target2', oncePerTurn: true,
+              desc: 'ทิ้งการ์ด 1 ใบ เลือกตัวละครชาย 2 คนให้ประลองกัน (ยกเลิกด้วย [ขัดขวาง] ไม่ได้)' },
+  zhouyu:   { key: 'fanjian',  name: 'หว่านเมล็ดหวาดระแวง (反间)', needs: 'target', oncePerTurn: true,
+              desc: 'เลือกตัวละคร ให้เขาทายชนิดไพ่ (suit) แล้วจั่วไพ่ 1 ใบจากมือคุณเปิดเผย — ถ้าชนิดไม่ตรงรับ 1 ดาเมจ (เก็บไพ่ไว้เสมอ)' },
 };
 
 // การ์ดที่ใช้ "ตอบโต้" เท่านั้น — ห้ามเล่นเชิงรุกในเฟสเล่นการ์ด
@@ -182,14 +193,49 @@ const CHAR_PASSIVES = {
   zhaoyun:  { attackAsDodge: true,          // Long Dan (龙胆): โจมตีใช้เป็นหลบได้
                dodgeAsAttack: true },        //                   หลบใช้เป็นโจมตีได้
   zhangfei: { unlimitedAttacks: true },     // Pao Xiao (咆哮): โจมตีได้ไม่จำกัด
-  zhenji:   { blackAsDodge: true },         // Qing Guo (倾国): ไพ่ดำใช้เป็นหลบได้
-  machao:   { distanceMinus1: true },       // Ma Shu (马术): ระยะ -1 จากตนเองถึงคนอื่น
-  lvbu:     { needsTwoDodge: true },        // Wu Shuang (无双): เป้าต้องหลบ 2 ใบ
+  zhenji:   { blackAsDodge: true,           // Qing Guo (倾国): ไพ่ดำใช้เป็นหลบได้
+               luoshen: true },             // Luo Shen (洛神): เฟสเตรียม — ตัดสินไพ่ดำริบไว้
+  machao:   { distanceMinus1: true,         // Ma Shu (马术): ระยะ -1 จากตนเองถึงคนอื่น
+               tieji: true },               // Tie Ji (铁骑): โจมตีโดน → ตัดสินแดง = หลบไม่ได้
+  lvbu:     { needsTwoDodge: true,          // Wu Shuang (无双): เป้าต้องหลบ 2 ใบ
+               duelTwoAttacks: true },       //                  คู่ประลองต้องเล่นโจมตี 2 ใบ
   luxun:    { immuneToSteal: true,          // Qian Xun (谦逊): ขโมย/เบี่ยงเบนไม่ได้
-               immuneToOverindulgence: true },
+               immuneToOverindulgence: true,
+               lianying: true },            // Lian Ying (连营): เสียไพ่ใบสุดท้าย → จั่ว 1
   huangyy:  { unlimitedTrickRange: true,    // Qi Cai (奇才): การ์ดยุทธวิธีของคุณมีระยะไม่จำกัด
                jizhi: true },               // Ji Zhi (集智): จั่ว 1 ใบหลังใช้การ์ดยุทธวิธี
+  // ── ตัวละครเพิ่มเติม ──
+  zhuge:    { kongcheng: true },            // Kong Cheng (空城): ไม่มีไพ่ในมือ → เป็นเป้าโจมตี/ประลองไม่ได้
+  gongsuanzan:{ yicong: true },             // Yi Cong (义从): ระยะปรับตาม HP
+  xuzhu:    { luoyi: true },                // Luo Yi (裸衣): เฟสจั่ว เลือกจั่วน้อยลง 1 → โจมตี/ประลอง +1 ดาเมจ
+  zhangliao:{ tuxi: true },                 // Tu Xi (突袭): เฟสจั่ว ไม่จั่วจากกอง → ริบไพ่จากสูงสุด 2 คน
+  yuejin:   { xiaoguo: true },              // Xiao Guo (骁果): ท้ายเทิร์นคนอื่น บีบทิ้งอุปกรณ์/รับ 1 ดาเมจ
+  ganning:  { blackAsBurn: true },          // Qi Xi (奇袭): ไพ่ดำใช้เป็น [เผาสะพาน]
+  daqiao:   { diamondAsOverindulge: true,   // Guo Se (国色): ไพ่ ♦ ใช้เป็น [มัวเมา]
+               liuli: true },               // Liu Li (流离): โดนโจมตี → ทิ้งไพ่โยกเป้าหมาย
+  huatuo:   { redAsPeach: true },           // Jiu Ji (急救): ไพ่แดงใช้เป็น [ลูกท้อ] ในตาคนอื่น
+  zhouyu:   { yingzi: true },               // Ying Zi (英姿): เฟสจั่ว จั่วเพิ่ม 1 ใบ
+  diaochan: { biyue: true },                // Bi Yue (闭月): เฟสท้าย จั่ว 1 ใบ
+  sunss:    { xiaoji: true },               // Xiao Ji (枭姬): เสียอุปกรณ์ → จั่ว 2 ใบ
+  lvmeng:   { keji: true },                 // Ke Ji (克己): ไม่ได้โจมตีในตา → ข้ามเฟสทิ้งไพ่ได้
+  caocao:   { jianxiong: true },            // Jian Xiong (奸雄): โดนดาเมจ → ริบไพ่ที่ก่อความเสียหาย
+  simayi:   { fankui: true,                 // Fan Kui (反馈): โดนดาเมจ → ริบไพ่ 1 ใบจากผู้ก่อ
+               guicai: true },              // Gui Cai (鬼才): หลังเปิดไพ่ตัดสิน → ทิ้งไพ่แทนเป็นไพ่ตัดสินใหม่
+  guojia:   { tiandu: true,                 // Tian Du (天妒): ไพ่ตัดสินของตนมีผล → ริบไพ่นั้น
+               yiji: true },                // Yi Ji (遗计): โดนดาเมจ 1 หน่วย → ดูไพ่ 2 ใบบนสุด มอบให้ใครก็ได้
+  xiahou:   { ganglie: true },              // Gang Lie (刚烈): โดนดาเมจ → ตัดสิน ไม่ใช่ ♥ → ผู้ก่อทิ้ง 2 ใบ/รับ 1 ดาเมจ
+  huaxiong: { conqueror: true },            // Conqueror: โดน [โจมตี] สีแดง → ผู้ก่ออาจฟื้น/จั่ว
+  panfeng:  { kuangfu: true },              // Kuang Fu (狂斧): [โจมตี] โดน → เทียบ HP จั่ว 2 หรือเสีย 1
+  ladygan:  { shenzhi: true },              // Shen Zhi (神智): เมื่อฟื้น HP → ให้ตัวละครอื่นจั่ว 1 (2 ถ้ามือว่าง)
+  sunquan:  { jiuyuan: true },              // Jiu Yuan (救援): ฝ่ายง่อก๊กใช้ [ลูกท้อ] กับซุนฉวน → ฟื้นเพิ่ม 1
+  liubei:   { },                            // Ren De เป็น active skill (ดู ACTIVE_SKILLS)
 };
+
+// ─── ทักษะแบบ "หน้าต่างขัดจังหวะ/มอบหมายข้ามผู้เล่น" (เปิดใช้ครบแล้ว) ────────────────────
+//   simayi  — Gui Cai (鬼才):  _stepJudgment/_promptGuicai/resolveGuicai
+//   yuejin  — Xiao Guo (骁果): _promptXiaoguo/useXiaoguo/respondXiaoguo
+//   caocao  — Hu Jia (护驾):   _lordAssistFor/_promptLordAssist/resolveLordAssist (kingdom WEI)
+//   liubei  — Ji Jiang (激将): _lordAssistFor/_promptLordAssist/resolveLordAssist (kingdom SHU)
 
 // ─── Roles by player count (ตรงตามตารางในคู่มือ — สามก๊กฉบับมาตรฐาน) ──────────────
 // คอลัมน์: จักรพรรดิ(Lord) / ภักดี(Loyalist) / กบฎ(Rebel) / ทรยศ(Spy)
@@ -501,6 +547,9 @@ class Game {
     if (to.equipment?.defMount) d += 1;
     // Ma Chao (Ma Shu): ระยะจากตัวเองไปทุกคนลด 1
     if (CHAR_PASSIVES[from.character]?.distanceMinus1) d -= 1;
+    // กงซุนจ้าน (公孙瓒) — Yi Cong (义从): HP>2 ระยะจากตน -1; HP≤2 ระยะของคนอื่นถึงตน +1
+    if (CHAR_PASSIVES[from.character]?.yicong && from.hp > 2) d -= 1;
+    if (CHAR_PASSIVES[to.character]?.yicong && to.hp <= 2) d += 1;
     return Math.max(1, d);
   }
 
@@ -533,6 +582,126 @@ class Game {
     if (this.log.length > 200) this.log.shift();
   }
 
+  // ─── ฟื้นพลังชีวิต + ทริกเกอร์ที่เกี่ยวข้อง ────────────────────────────────────────
+  //   healer = ผู้ที่ทำให้ฟื้น (อาจเป็น null) — ใช้กับ Jiu Yuan ของซุนฉวน
+  heal(player, amount, healer = null) {
+    const before = player.hp;
+    player.hp = Math.min(player.maxHp, player.hp + amount);
+    const gained = player.hp - before;
+    if (gained <= 0) return 0;
+    // นางกาน (甘夫人) — Shen Zhi (神智): เมื่อฟื้น HP → ให้ตัวละครอื่นจั่ว 1 (2 ถ้ามือว่าง)
+    if (CHAR_PASSIVES[player.character]?.shenzhi) {
+      const other = this.nextAlivePlayer(player);
+      if (other) {
+        const n = other.hand.length === 0 ? 2 : 1;
+        other.hand.push(...this.drawCards(n));
+        this.addLog(player.username, `🧠 [ความรอบคอบ/神智] ฟื้นพลังชีวิต — ${other.username} จั่ว ${n} ใบ`);
+      }
+    }
+    return gained;
+  }
+
+  // เรียกหลังผู้เล่นเสียการ์ดในมือ — หลู่ซวิน: Lian Ying (连营) เสียไพ่ใบสุดท้าย → จั่ว 1
+  afterHandLoss(player, handBefore) {
+    if (handBefore > 0 && player.hand.length === 0 && player.hp > 0
+        && CHAR_PASSIVES[player.character]?.lianying) {
+      player.hand.push(...this.drawCards(1));
+      this.addLog(player.username, `🏕️ [ลมหายใจครั้งที่สอง/连营] เสียไพ่ใบสุดท้าย — จั่ว 1 ใบ`);
+    }
+  }
+
+  // เรียกหลังผู้เล่นเสียอุปกรณ์ — ซุนซ่างเซียง: Xiao Ji (枭姬) → จั่ว 2 ใบต่ออุปกรณ์ที่เสีย
+  afterLoseEquip(player, count = 1) {
+    if (count > 0 && player.hp > 0 && CHAR_PASSIVES[player.character]?.xiaoji) {
+      player.hand.push(...this.drawCards(2 * count));
+      this.addLog(player.username, `🐦 [ความบ้าบิ่น/枭姬] เสียอุปกรณ์ — จั่ว ${2 * count} ใบ`);
+    }
+  }
+
+  // จูกัดเหลียง — Kong Cheng (空城): ไม่มีไพ่ในมือ → เป็นเป้า [โจมตี]/[ประลอง] ไม่ได้
+  kongChengProtected(target) {
+    return CHAR_PASSIVES[target?.character]?.kongcheng && target.hand.length === 0;
+  }
+
+  // ─── ตรวจการใช้ไพ่ "แทน" การ์ดอื่น (ทักษะแปลงการ์ด) ──────────────────────────────
+  //   คืน { as } เมื่อแปลงได้, { error } เมื่อแปลงไม่ได้, {} เมื่อไม่ได้ขอแปลง
+  resolveSubstitution(from, card, asName) {
+    if (!asName || asName === card.name) return {};
+    const p = CHAR_PASSIVES[from.character] || {};
+    if (asName === 'Attack' && p.redAsAttack && card.color === 'red') return { as: 'Attack' };
+    if (asName === 'Burning Bridges' && p.blackAsBurn && card.color === 'black') return { as: 'Burning Bridges' };
+    if (asName === 'Overindulgence' && p.diamondAsOverindulge && card.suit === '♦') return { as: 'Overindulgence' };
+    if (asName === 'Peach' && p.redAsPeach && card.color === 'red') return { as: 'Peach' };
+    return { error: { ok: false, msg: 'ตัวละครนี้ใช้การ์ดนี้แทนการ์ดนั้นไม่ได้' } };
+  }
+
+  // ─── ทริกเกอร์หลังรับความเสียหาย (ยังไม่ตาย) ───────────────────────────────────
+  //   ctx = { card, isAttack, color } — บริบทของแหล่งความเสียหาย
+  afterDamage(victim, amount, source, ctx = {}) {
+    // เฉาเชา (曹操) — Jian Xiong (奸雄): ริบการ์ดที่ก่อความเสียหาย
+    if (CHAR_PASSIVES[victim.character]?.jianxiong && ctx.card) {
+      const di = this.discardPile.findIndex(c => c.id === ctx.card.id);
+      const taken = di >= 0 ? this.discardPile.splice(di, 1)[0] : ctx.card;
+      if (taken) {
+        victim.hand.push(taken);
+        this.addLog(victim.username, `🦅 [เล่ห์กล/奸雄] ริบการ์ด "${taken.name}" ที่ก่อความเสียหาย`);
+      }
+    }
+    // ซือหม่าอี้ (司马懿) — Fan Kui (反馈): ริบการ์ด 1 ใบจากผู้ก่อความเสียหาย
+    if (CHAR_PASSIVES[victim.character]?.fankui && source && source.id !== victim.id) {
+      const loot = this.takeOneCard(source, true);
+      if (loot) {
+        victim.hand.push(loot);
+        this.addLog(victim.username, `🔄 [การโต้กลับ/反馈] ริบ "${loot.name}" จาก ${source.username}`);
+      }
+    }
+    // กัวเจีย (郭嘉) — Yi Ji (遗计): โดนดาเมจ → ดูไพ่ 2 ใบบนสุด/หน่วย (auto: เก็บเอง)
+    if (CHAR_PASSIVES[victim.character]?.yiji) {
+      const drawn = this.drawCards(2 * amount);
+      if (drawn.length) {
+        victim.hand.push(...drawn);
+        this.addLog(victim.username, `📜 [มรดกตกทอด/遗计] โดน ${amount} ดาเมจ — ดูและเก็บไพ่ ${drawn.length} ใบ`);
+      }
+    }
+    // เซี่ยโหวตุน (夏侯惇) — Gang Lie (刚烈): ตัดสิน ไม่ใช่ ♥ → ผู้ก่อทิ้ง 2 ใบ/รับ 1 ดาเมจ
+    if (CHAR_PASSIVES[victim.character]?.ganglie && source && source.id !== victim.id && source.hp > 0) {
+      const flip = this.drawCards(1)[0];
+      if (flip) this.discardPile.push(flip);
+      const tag = flip ? `${flip.rank}${flip.suit}` : '—';
+      if (flip && flip.suit !== '♥') {
+        if (source.hand.length >= 2) {
+          const handBefore = source.hand.length;
+          const lost = [source.hand.pop(), source.hand.pop()];
+          lost.forEach(c => this.discardPile.push(c));
+          this.addLog(victim.username, `🔥 [ความแน่วแน่/刚烈] เปิด ${tag} — ${source.username} ทิ้งการ์ด 2 ใบ`);
+          this.afterHandLoss(source, handBefore);
+        } else {
+          this.addLog(victim.username, `🔥 [ความแน่วแน่/刚烈] เปิด ${tag} — ${source.username} รับ 1 ดาเมจ`);
+          this.dealDamage(source, 1, victim);
+        }
+      } else if (flip) {
+        this.addLog(victim.username, `🔥 [ความแน่วแน่/刚烈] เปิด ${tag}(♥) — ผู้ก่อไม่ได้รับผล`);
+      }
+    }
+    // หัวสยง (华雄) — Conqueror: โดน [โจมตี] สีแดง → ผู้ก่อจั่ว 1 ใบ (auto)
+    if (CHAR_PASSIVES[victim.character]?.conqueror && ctx.isAttack && ctx.color === 'red' && source && source.hp > 0) {
+      source.hand.push(...this.drawCards(1));
+      this.addLog(victim.username, `👹 [ผู้พิชิต] ${source.username} โจมตีสีแดง — จั่ว 1 ใบ`);
+    }
+    // พันเฝิง (潘凤) — Kuang Fu (狂斧): [โจมตี] ของตนสร้างความเสียหาย → เทียบ HP
+    if (source && CHAR_PASSIVES[source.character]?.kuangfu && ctx.isAttack && !source.skillUsed?.kuangfu && source.hp > 0) {
+      source.skillUsed = source.skillUsed || {};
+      source.skillUsed.kuangfu = true;
+      if (victim.hp < source.hp) {
+        source.hand.push(...this.drawCards(2));
+        this.addLog(source.username, `🪓 [ขวานแห่งความบ้าคลั่ง/狂斧] HP เป้าหมายน้อยกว่า — จั่ว 2 ใบ`);
+      } else {
+        this.addLog(source.username, `🪓 [ขวานแห่งความบ้าคลั่ง/狂斧] HP เป้าหมาย ≥ ตน — เสีย 1 พลังชีวิต`);
+        this.dealDamage(source, 1, null);
+      }
+    }
+  }
+
   // ─── ทักษะสั่งใช้ของตัวละคร ──────────────────────────────────────────────────
   // คืนข้อมูลทักษะ + บอกว่ากดใช้ตอนนี้ได้ไหม (usable) เพื่อให้ client แสดง/ปิดปุ่ม
   getActiveSkill(player) {
@@ -547,7 +716,7 @@ class Game {
     else if (this.phase !== 'play') { usable = false; reason = 'ใช้ได้เฉพาะเฟสเล่นการ์ด'; }
     else if (this.pending) { usable = false; reason = 'กำลังรอการตอบโต้'; }
     else if (sk.oncePerTurn && player.skillUsed?.[sk.key]) { usable = false; reason = 'ใช้ไปแล้วในตานี้'; }
-    else if ((sk.needs === 'cards' || sk.needs === 'card+target') && player.hand.length === 0) {
+    else if (['cards','card+target','cards+target','card+target2','target'].includes(sk.needs) && player.hand.length === 0) {
       usable = false; reason = 'ไม่มีไพ่ในมือ';
     }
     return { key: sk.key, name: sk.name, desc: sk.desc, needs: sk.needs, usable, reason };
@@ -590,15 +759,198 @@ class Game {
         if (target.hp >= target.maxHp) return { ok: false, msg: 'เป้าหมายพลังชีวิตเต็มแล้ว' };
         player.hand = player.hand.filter(c => c.id !== card.id);
         this.discardPile.push(card);
-        target.hp = Math.min(target.maxHp, target.hp + 1);
+        this.heal(target, 1, player);
         player.skillUsed.qingnang = true;
         this.addLog(player.username, `💚 ถุงยาเขียว — รักษา ${target.username} +1 พลังชีวิต`);
         break;
+      }
+      case 'liubei': {  // เมตตาธรรม (仁德) — มอบการ์ดให้คนอื่น, ฟื้นเมื่อมอบรวม ≥2
+        const ids = Array.isArray(payload.cardIds) ? payload.cardIds : [];
+        const give = player.hand.filter(c => ids.includes(c.id));
+        if (give.length === 0) return { ok: false, msg: 'เลือกการ์ดที่จะมอบอย่างน้อย 1 ใบ' };
+        const target = this.room.players.find(p => p.id === payload.targetId && p.hp > 0 && p.id !== player.id);
+        if (!target) return { ok: false, msg: 'เลือกตัวละครอื่นที่จะมอบให้' };
+        player.hand = player.hand.filter(c => !ids.includes(c.id));
+        target.hand.push(...give);
+        player.rendeGiven = (player.rendeGiven || 0) + give.length;
+        this.addLog(player.username, `🤝 เมตตาธรรม — มอบการ์ด ${give.length} ใบให้ ${target.username}`);
+        if (player.rendeGiven >= 2 && !player.skillUsed.rendeHeal && player.hp < player.maxHp) {
+          player.skillUsed.rendeHeal = true;
+          this.heal(player, 1, player);
+          this.addLog(player.username, `🤝 มอบครบ 2 ใบ — ฟื้น HP 1 หน่วย`);
+        }
+        this.afterHandLoss(player, player.hand.length + give.length);
+        break;
+      }
+      case 'ladygan': {  // ปัญญาประเสริฐ (淑慎) — ทิ้งมือทั้งหมด, ฟื้นถ้าทิ้ง > HP
+        if (player.hand.length === 0) return { ok: false, msg: 'ไม่มีการ์ดในมือ' };
+        const n = player.hand.length;
+        player.hand.forEach(c => this.discardPile.push(c));
+        player.hand = [];
+        this.addLog(player.username, `🌸 ปัญญาประเสริฐ — ทิ้งการ์ดทั้งหมด ${n} ใบ`);
+        if (n > player.hp && player.hp < player.maxHp) {
+          this.heal(player, 1, player);
+          this.addLog(player.username, `🌸 ทิ้ง ${n} > HP ${player.hp - 1} — ฟื้น HP 1 หน่วย`);
+        }
+        player.skillUsed.shushen = true;
+        this.afterHandLoss(player, n);
+        break;
+      }
+      case 'sunss': {  // การสมรส (结姻) — ทิ้ง 2 ใบ, ตัวเอง+ชายบาดเจ็บฟื้น 1
+        const ids = Array.isArray(payload.cardIds) ? payload.cardIds : [];
+        if (ids.length !== 2) return { ok: false, msg: 'ต้องทิ้งการ์ด 2 ใบ' };
+        const give = player.hand.filter(c => ids.includes(c.id));
+        if (give.length !== 2) return { ok: false, msg: 'การ์ดไม่อยู่ในมือ' };
+        const target = this.room.players.find(p => p.id === payload.targetId && p.hp > 0 && p.id !== player.id);
+        if (!target) return { ok: false, msg: 'เลือกตัวละครชายที่บาดเจ็บ' };
+        if (genderOf(target.character) !== 'M') return { ok: false, msg: 'เป้าหมายต้องเป็นตัวละครชาย' };
+        if (target.hp >= target.maxHp && player.hp >= player.maxHp) return { ok: false, msg: 'ไม่มีใครบาดเจ็บให้รักษา' };
+        player.hand = player.hand.filter(c => !ids.includes(c.id));
+        give.forEach(c => this.discardPile.push(c));
+        this.heal(player, 1, player);
+        this.heal(target, 1, player);
+        player.skillUsed.jieyin = true;
+        this.addLog(player.username, `💍 การสมรส — ${player.username} และ ${target.username} ฟื้น HP คนละ 1`);
+        this.afterHandLoss(player, player.hand.length + 2);
+        break;
+      }
+      case 'diaochan': {  // เสน่ห์มารยา (离间) — ทิ้ง 1 ใบ ให้ชาย 2 คนประลอง
+        const card = player.hand.find(c => c.id === payload.cardId);
+        if (!card) return { ok: false, msg: 'เลือกการ์ดที่จะทิ้ง 1 ใบ' };
+        const ids = Array.isArray(payload.targetIds) ? payload.targetIds : [];
+        if (ids.length !== 2 || ids[0] === ids[1]) return { ok: false, msg: 'เลือกตัวละครชาย 2 คน' };
+        const t1 = this.room.players.find(p => p.id === ids[0] && p.hp > 0);
+        const t2 = this.room.players.find(p => p.id === ids[1] && p.hp > 0);
+        if (!t1 || !t2) return { ok: false, msg: 'เป้าหมายไม่ถูกต้อง' };
+        if (genderOf(t1.character) !== 'M' || genderOf(t2.character) !== 'M')
+          return { ok: false, msg: 'เป้าหมายต้องเป็นตัวละครชายทั้งคู่' };
+        const handBefore = player.hand.length;
+        player.hand = player.hand.filter(c => c.id !== card.id);
+        this.discardPile.push(card);
+        player.skillUsed.lijian = true;
+        this.afterHandLoss(player, handBefore);
+        // t1 ถูกบังคับให้ประลอง t2 (t1 เล่นโจมตีก่อน) — ยกเลิกด้วยขัดขวางไม่ได้
+        const atkNeeded = CHAR_PASSIVES[t2.character]?.duelTwoAttacks ? 2 : 1;
+        this.addLog(player.username, `💃 เสน่ห์มารยา — บังคับ ${t1.username} ประลองกับ ${t2.username}!`);
+        this.broadcast();
+        this.requestResponse('duel', t1, t2, 'Duel', { damage: 1, negatable: false, attacksNeeded: atkNeeded });
+        return { ok: true };
+      }
+      case 'zhouyu': {  // หว่านเมล็ดหวาดระแวง (反间)
+        const target = this.room.players.find(p => p.id === payload.targetId && p.hp > 0 && p.id !== player.id);
+        if (!target) return { ok: false, msg: 'เลือกตัวละครเป้าหมาย' };
+        if (player.hand.length === 0) return { ok: false, msg: 'ไม่มีการ์ดในมือ' };
+        player.skillUsed.fanjian = true;
+        // เปิดหน้าต่างให้เป้าหมายทายชนิดไพ่ (suit)
+        this.fanjian = { sourceId: player.id, targetId: target.id };
+        this.addLog(player.username, `🎭 หว่านเมล็ดหวาดระแวง — ${target.username} ต้องทายชนิดไพ่`);
+        const sock = io.sockets.sockets.get(target.socketId);
+        if (sock) sock.emit('askFanjian', { sourceName: player.username });
+        this.broadcast();
+        return { ok: true };
       }
       default: return { ok: false, msg: 'ยังไม่รองรับทักษะนี้' };
     }
     this.broadcast();
     return { ok: true };
+  }
+
+  // เป้าหมายของ Fan Jian (反间) ทายชนิดไพ่ → จั่วไพ่จากมือโจวอี๋เปิดเผย → ถ้าไม่ตรงรับ 1 ดาเมจ
+  resolveFanjian(targetId, suit) {
+    const f = this.fanjian;
+    if (!f || f.targetId !== targetId) return { ok: false, msg: 'ไม่มีการหว่านเมล็ดที่รออยู่' };
+    const source = this.room.players.find(p => p.id === f.sourceId);
+    const target = this.room.players.find(p => p.id === f.targetId);
+    this.fanjian = null;
+    if (!source || !target) return { ok: false };
+    if (source.hand.length === 0) { this.addLog(source.username, '🎭 หว่านเมล็ด — แต่ไม่มีการ์ดในมือแล้ว'); this.broadcast(); return { ok: true }; }
+    const idx = Math.floor(Math.random() * source.hand.length);
+    const card = source.hand.splice(idx, 1)[0];
+    target.hand.push(card);
+    const guessed = ['♠','♥','♦','♣'].includes(suit) ? suit : '♥';
+    this.addLog(target.username, `🎭 ทาย "${guessed}" — เปิดได้ ${card.rank}${card.suit}`);
+    this.afterHandLoss(source, source.hand.length + 1);
+    if (card.suit !== guessed) {
+      this.addLog(target.username, `🎭 ชนิดไม่ตรง — ${target.username} รับ 1 ดาเมจ (เก็บการ์ดไว้)`);
+      this.dealDamage(target, 1, source);
+    } else {
+      this.addLog(target.username, `🎭 ทายถูก — ไม่รับความเสียหาย (เก็บการ์ดไว้)`);
+    }
+    this.broadcast();
+    return { ok: true };
+  }
+
+  // ─── ทักษะเจ้านาย: Hu Jia (护驾) / Ji Jiang (激将) — ฝ่ายเดียวกันเล่นการ์ดแทน ──────────
+  _lordAssistFor(responder, type) {
+    let need = null, kingdom = null;
+    if (responder.character === 'caocao' && type === 'dodge') { need = 'Dodge'; kingdom = 'WEI'; }
+    else if (responder.character === 'liubei' && (type === 'duel' || type === 'avoidatk' || type === 'borrow')) { need = 'Attack'; kingdom = 'SHU'; }
+    else return null;
+    const queue = this.room.players.filter(p => p.hp > 0 && p.id !== responder.id
+      && kingdomOf(p.character) === kingdom && p.hand.some(c => c.name === need)).map(p => p.id);
+    if (!queue.length) return null;
+    return { need, kingdom, queue };
+  }
+
+  _promptLordAssist() {
+    const la = this.lordAssist;
+    if (!la) return;
+    const lord = this.room.players.find(p => p.id === la.lordId);
+    while (la.idx < la.queue.length) {
+      const ally = this.room.players.find(p => p.id === la.queue[la.idx]);
+      if (ally && ally.hp > 0 && ally.hand.some(c => c.name === la.need)) {
+        clearInterval(this.lordTimer);
+        this.timer = 20;
+        this.lordTimer = setInterval(() => {
+          this.timer--;
+          io.to(this.room.code).emit('timerTick', this.timer);
+          if (this.timer <= 0) { clearInterval(this.lordTimer); this.resolveLordAssist(ally.id, null); }
+        }, 1000);
+        const sock = io.sockets.sockets.get(ally.socketId);
+        if (sock) sock.emit('askLordAssist', { need: la.need, lordName: lord?.username, skill: la.need === 'Dodge' ? '护驾' : '激将' });
+        this.broadcast();
+        return;
+      }
+      la.idx++;
+    }
+    this._concludeLordAssist(null, null);   // ไม่มีใครช่วย
+  }
+
+  resolveLordAssist(allyId, cardId) {
+    const la = this.lordAssist;
+    if (!la || la.queue[la.idx] !== allyId) return { ok: false, msg: 'ไม่มีคำขอช่วยเหลือที่รออยู่' };
+    clearInterval(this.lordTimer);
+    const ally = this.room.players.find(p => p.id === allyId);
+    if (cardId && ally) {
+      const idx = ally.hand.findIndex(c => c.id === cardId && c.name === la.need);
+      if (idx >= 0) {
+        const handBefore = ally.hand.length;
+        const card = ally.hand.splice(idx, 1)[0];
+        this.addLog(ally.username, `🤝 [${la.need === 'Dodge' ? 'ผู้ติดตาม/护驾' : 'อิทธิพล/激将'}] เล่น ${card.name} แทนเจ้านาย`);
+        this.afterHandLoss(ally, handBefore);
+        this._concludeLordAssist(ally, card);
+        return { ok: true };
+      }
+    }
+    la.idx++;
+    this._promptLordAssist();
+    return { ok: true };
+  }
+
+  _concludeLordAssist(ally, card) {
+    const la = this.lordAssist;
+    this.lordAssist = null;
+    clearInterval(this.lordTimer);
+    if (!la) return;
+    const lord = this.room.players.find(p => p.id === la.lordId);
+    if (!lord) { this.pending = null; return this._continueAfterResponse(); }
+    this._lordAssistDone = true;   // กันเปิดหน้าต่างซ้ำตอน resolveResponse รอบสอง
+    if (ally && card) {
+      lord.hand.push(card);                       // ใส่การ์ดเข้ามือเจ้านายชั่วคราว
+      this.resolveResponse(lord.id, card.id);     // ให้ระบบจัดการตามปกติ (นับว่าเจ้านายป้องกัน)
+    } else {
+      this.resolveResponse(lord.id, null);        // ไม่มีใครช่วย → ตอบโต้ล้มเหลว
+    }
   }
 
   // ─── เริ่มรอบของผู้เล่นปัจจุบัน (6 เฟสตามคู่มือ) ──────────────────────────────
@@ -609,22 +961,58 @@ class Game {
     cur.wined = false;
     cur.skillUsed = {};   // รีเซ็ตการใช้ทักษะ (แบบครั้งเดียวต่อตา) ของผู้เล่นคนนี้
     cur.skipPlay = false;
+    cur.luoyiBoost = false;   // ซวีจู้ (裸衣): โบนัสดาเมจจากการจั่วน้อยลง
+    cur.rendeGiven = 0;       // หลิวเป้ย (仁德): จำนวนการ์ดที่มอบในตานี้
     this.turn++;
 
     // 1) เตรียมรบ
     this.phase = 'start';
+    this.prepareSkills(cur);    // ทักษะช่วงเตรียม (เจินจี: Luo Shen)
     // 2) เปิดการ์ดตัดสิน (Judgment) — ตัดสินการ์ดหน่วงเวลา (สายฟ้า/เสพสุข)
     this.phase = 'judge';
     this.runJudgments(cur);
   }
 
-  // ─── เฟสตัดสิน — ประมวลผลการ์ดหน่วงเวลาในช่องตัดสินทีละใบ ────────────────────────
+  // ─── ทักษะช่วงเตรียมรบ (Prepare phase) ────────────────────────────────────────
+  prepareSkills(cur) {
+    // เจินจี (甄姬) — Luo Shen (洛神): ตัดสินไพ่ ถ้าดำริบไว้ แล้วตัดสินต่อได้ (auto)
+    if (CHAR_PASSIVES[cur.character]?.luoshen && cur.hp > 0) {
+      let taken = 0;
+      while (taken < 8) {  // กันลูปไม่รู้จบ
+        const flip = this.drawCards(1)[0];
+        if (!flip) break;
+        const tag = `${flip.rank}${flip.suit}`;
+        if (flip.color === 'black') {
+          cur.hand.push(flip);
+          taken++;
+          this.addLog(cur.username, `🌊 [เทพีแห่งแม่น้ำลั่ว/洛神] ตัดสิน ${tag}(ดำ) — ริบไว้ (ตัดสินต่อ)`);
+        } else {
+          this.discardPile.push(flip);
+          this.addLog(cur.username, `🌊 [เทพีแห่งแม่น้ำลั่ว/洛神] ตัดสิน ${tag}(แดง) — หยุด${taken ? ` (ได้ ${taken} ใบ)` : ''}`);
+          break;
+        }
+      }
+    }
+  }
+
+  // ─── เฟสตัดสิน — ประมวลผลการ์ดหน่วงเวลาในช่องตัดสินทีละใบ (รองรับ Gui Cai) ──────────
   runJudgments(cur) {
+    this._stepJudgment(cur);
+  }
+
+  _stepJudgment(cur) {
     while (cur.judgments && cur.judgments.length) {
       if (cur.hp <= 0 || this.dyingPlayerId) break;
+      const flip = this.drawCards(1)[0];
       const jcard = cur.judgments.shift();
-      this.resolveJudgmentCard(cur, jcard);
-      // สายฟ้าอาจทำให้เข้าสภาวะใกล้ตาย (รอเพอช) — หยุดรอแล้วค่อยทำต่อ
+      // ── หน้าต่าง Gui Cai (鬼才) ของซือหม่าอี้: เปลี่ยนไพ่ตัดสินก่อนมีผล ──
+      const queue = this._guicaiQueue();
+      if (queue.length && flip) {
+        this.guicai = { judgePlayerId: cur.id, jcard, flip, queue, idx: 0 };
+        this._promptGuicai();
+        return;   // พัก — resolveGuicai จะเดินต่อ
+      }
+      this.applyJudgmentResult(cur, jcard, flip);
       if (this.dyingPlayerId) break;
     }
     // ถ้ายังรอเพอชจากการตัดสิน (สายฟ้า) ให้หยุดไว้ แล้วต่อเมื่อเคลียร์สภาวะใกล้ตาย
@@ -632,9 +1020,75 @@ class Game {
     this.afterJudgment(cur);
   }
 
-  // เปิดการ์ดตัดสิน 1 ใบ (จากกอง) แล้วบังคับใช้ผลของการ์ดหน่วงเวลา
-  resolveJudgmentCard(cur, jcard) {
-    const flip = this.drawCards(1)[0];
+  // ซือหม่าอี้ที่ยังมีชีวิต + มีไพ่ในมือ (ตามลำดับที่นั่ง) — มีสิทธิ์ใช้ Gui Cai
+  _guicaiQueue() {
+    return this.room.players
+      .filter(p => p.hp > 0 && CHAR_PASSIVES[p.character]?.guicai && p.hand.length > 0)
+      .map(p => p.id);
+  }
+
+  _promptGuicai() {
+    const gc = this.guicai;
+    if (!gc) return;
+    while (gc.idx < gc.queue.length) {
+      const simayi = this.room.players.find(p => p.id === gc.queue[gc.idx]);
+      if (simayi && simayi.hp > 0 && simayi.hand.length > 0) {
+        clearInterval(this.guicaiTimer);
+        this.timer = 20;
+        this.guicaiTimer = setInterval(() => {
+          this.timer--;
+          io.to(this.room.code).emit('timerTick', this.timer);
+          if (this.timer <= 0) { clearInterval(this.guicaiTimer); this.resolveGuicai(simayi.id, null); }
+        }, 1000);
+        const judgeP = this.room.players.find(p => p.id === gc.judgePlayerId);
+        const sock = io.sockets.sockets.get(simayi.socketId);
+        if (sock) sock.emit('askGuicai', {
+          flip: { rank: gc.flip.rank, suit: gc.flip.suit },
+          judgeName: judgeP?.username, jcardName: gc.jcard.name,
+        });
+        this.broadcast();
+        return;
+      }
+      gc.idx++;
+    }
+    this._finishGuicai();
+  }
+
+  // ซือหม่าอี้เลือกทิ้งไพ่ 1 ใบเปลี่ยนไพ่ตัดสิน (cardId=null = ไม่เปลี่ยน)
+  resolveGuicai(playerId, cardId) {
+    const gc = this.guicai;
+    if (!gc || gc.queue[gc.idx] !== playerId) return { ok: false, msg: 'ไม่มีหน้าต่างกุ้ยไฉที่รออยู่' };
+    clearInterval(this.guicaiTimer);
+    const simayi = this.room.players.find(p => p.id === playerId);
+    if (cardId && simayi) {
+      const idx = simayi.hand.findIndex(c => c.id === cardId);
+      if (idx >= 0) {
+        const handBefore = simayi.hand.length;
+        const newCard = simayi.hand.splice(idx, 1)[0];
+        this.discardPile.push(gc.flip);   // ไพ่ตัดสินเดิม → กองทิ้ง
+        gc.flip = newCard;                 // การ์ดใหม่กลายเป็นไพ่ตัดสิน
+        this.addLog(simayi.username, `🃏 [เนโครแมนซี/鬼才] เปลี่ยนไพ่ตัดสินเป็น ${newCard.rank}${newCard.suit}`);
+        this.afterHandLoss(simayi, handBefore);
+      }
+    }
+    gc.idx++;
+    this._promptGuicai();
+    return { ok: true };
+  }
+
+  _finishGuicai() {
+    clearInterval(this.guicaiTimer);
+    const gc = this.guicai;
+    this.guicai = null;
+    if (!gc) return;
+    const cur = this.room.players.find(p => p.id === gc.judgePlayerId);
+    if (!cur) return;
+    this.applyJudgmentResult(cur, gc.jcard, gc.flip);
+    this._stepJudgment(cur);   // เดินการ์ดตัดสินใบถัดไป
+  }
+
+  // ประมวลผลไพ่ตัดสินที่เปิดแล้ว (flip) — บังคับใช้ผลของการ์ดหน่วงเวลา
+  applyJudgmentResult(cur, jcard, flip) {
     if (flip) this.discardPile.push(flip);
     const tag = flip ? `${flip.rank}${flip.suit}` : '—';
 
@@ -668,6 +1122,15 @@ class Game {
       // การ์ดอื่นในช่องตัดสิน (ไม่ควรเกิด) — ทิ้งทันที
       this.discardPile.push(jcard);
     }
+    // กัวเจีย (郭嘉) — Tian Du (天妒): หลังการ์ดตัดสินมีผล → ริบไพ่ตัดสินนั้น (auto)
+    if (flip && CHAR_PASSIVES[cur.character]?.tiandu) {
+      const di = this.discardPile.lastIndexOf(flip);
+      if (di >= 0) {
+        this.discardPile.splice(di, 1);
+        cur.hand.push(flip);
+        this.addLog(cur.username, `🌌 [ความหึงหวงของสวรรค์/天妒] ริบไพ่ตัดสิน ${tag} มาเป็นของตน`);
+      }
+    }
   }
 
   // ผู้เล่นคนถัดไปที่ยังมีชีวิต (ตามลำดับที่นั่ง) — ใช้กับการเคลื่อนสายฟ้า
@@ -695,7 +1158,11 @@ class Game {
   }
 
   // ผู้เล่นกดจั่วการ์ดเอง (เฟสจั่ว) — auto=true เมื่อหมดเวลาแล้วจั่วให้อัตโนมัติ
-  playerDraw(playerId, auto = false) {
+  //   opts.useLuoyi → ซวีจู้ (裸衣): จั่วน้อยลง 1 ใบ แลกกับ [โจมตี]/[ประลอง] +1 ดาเมจในตานี้
+  //   opts.tuxiTargets → จางเหลียว (突袭): ไม่จั่วจากกอง แต่ริบไพ่ 1 ใบจากเป้าหมายสูงสุด 2 คน
+  playerDraw(playerId, auto = false, opts = false) {
+    if (opts === true || opts === false) opts = { useLuoyi: !!opts };  // รองรับ signature เดิม
+    const useLuoyi = !!opts.useLuoyi;
     const players = this.room.players;
     const cur = players[this.currentPlayer];
     if (!auto) {
@@ -703,10 +1170,38 @@ class Game {
       if (this.phase !== 'draw' || !this.awaitingDraw) return { ok: false, msg: 'ยังไม่ถึงเฟสจั่วการ์ด' };
     }
     if (!this.awaitingDraw) return { ok: false, msg: 'จั่วการ์ดไปแล้ว' };
+
+    // จางเหลียว (张辽) — Tu Xi (突袭): ไม่จั่วจากกอง → ริบไพ่ 1 ใบจากเป้าหมายสูงสุด 2 คน
+    const tuxiTargets = Array.isArray(opts.tuxiTargets) ? opts.tuxiTargets.slice(0, 2) : [];
+    if (tuxiTargets.length && CHAR_PASSIVES[cur.character]?.tuxi) {
+      this.awaitingDraw = false;
+      let got = 0;
+      for (const tid of tuxiTargets) {
+        const t = players.find(p => p.id === tid && p.hp > 0 && p.id !== cur.id && p.hand.length > 0);
+        if (!t) continue;
+        const loot = this.takeOneCard(t, true);
+        if (loot) { cur.hand.push(loot); got++; this.addLog(cur.username, `🥷 [การโจมตีฉับพลัน/突袭] ริบไพ่จาก ${t.username}`); }
+      }
+      if (got === 0) cur.hand.push(...this.drawCards(2));   // ไม่มีอะไรให้ริบ → จั่วปกติ
+      this.phase = 'play';
+      this.startTimer();
+      this.broadcast();
+      return { ok: true };
+    }
+
     this.awaitingDraw = false;
-    const drawn = this.drawCards(2);
+    let drawCount = 2;
+    // โจวอี๋ (周瑜) — Ying Zi (英姿): จั่วเพิ่ม 1 ใบ
+    if (CHAR_PASSIVES[cur.character]?.yingzi) drawCount += 1;
+    // ซวีจู้ (许褚) — Luo Yi (裸衣): เลือกจั่วน้อยลง 1 → โจมตี/ประลอง +1 ดาเมจในตานี้
+    if (useLuoyi && CHAR_PASSIVES[cur.character]?.luoyi) {
+      drawCount -= 1;
+      cur.luoyiBoost = true;
+      this.addLog(cur.username, `💪 [เปลือยกายอุกอาจ/裸衣] จั่วน้อยลง 1 ใบ — [โจมตี]/[ประลอง] +1 ดาเมจในตานี้`);
+    }
+    const drawn = this.drawCards(drawCount);
     cur.hand.push(...drawn);
-    this.addLog(cur.username, `จั่วการ์ด 2 ใบ${auto ? ' (อัตโนมัติ)' : ''} (มือ ${cur.hand.length} ใบ)`);
+    this.addLog(cur.username, `จั่วการ์ด ${drawCount} ใบ${auto ? ' (อัตโนมัติ)' : ''} (มือ ${cur.hand.length} ใบ)`);
     // เสพสุข (乐不思蜀): ติดมัวเมา → ข้ามเฟสเล่นการ์ด ไปเฟสทิ้ง/จบตาเลย
     if (cur.skipPlay) {
       cur.skipPlay = false;
@@ -743,7 +1238,8 @@ class Game {
   }
 
   // ─── เล่นการ์ดในเฟสเล่นการ์ด ─────────────────────────────────────────────────
-  playCard(playerId, cardId, targetId) {
+  //   asName = ชื่อการ์ดที่ต้องการ "ใช้แทน" (ทักษะแปลงการ์ด เช่น กานหนิง/ต้าเฉียว)
+  playCard(playerId, cardId, targetId, asName = null) {
     const players = this.room.players;
     const cur = players[this.currentPlayer];
     if (this.pending) return { ok: false, msg: 'กำลังรอการตอบโต้อยู่' };
@@ -756,16 +1252,21 @@ class Game {
 
     const card = cur.hand[cardIdx];
 
+    // ── ทักษะแปลงการ์ด (กานหนิง: ดำ→เผาสะพาน, ต้าเฉียว: ♦→มัวเมา, หัวถัว: แดง→ลูกท้อ ฯลฯ) ──
+    const sub = this.resolveSubstitution(cur, card, asName);
+    if (sub.error) return sub.error;
+    const effCard = sub.as ? { ...card, name: sub.as, _origName: card.name } : card;
+
     // ── ตรวจเงื่อนไขการเล่นการ์ด ──
     // Guan Yu passive: red cards bypass response-only restriction (will be treated as Attack)
     const isGuanyuRedPlay = CHAR_PASSIVES[cur.character]?.redAsAttack && card.color === 'red' && !!targetId;
-    if (RESPONSE_ONLY_CARDS.includes(card.name) && !isGuanyuRedPlay)
+    if (RESPONSE_ONLY_CARDS.includes(effCard.name) && !isGuanyuRedPlay && !sub.as)
       return { ok: false, msg: `การ์ด${card.name} ใช้สำหรับตอบโต้เท่านั้น เล่นเชิงรุกไม่ได้` };
-    if (UNSUPPORTED_PLAY_CARDS.includes(card.name))
+    if (UNSUPPORTED_PLAY_CARDS.includes(effCard.name))
       return { ok: false, msg: `การ์ด${card.name} เป็นการ์ดหน่วงเวลา (ต้องมีเฟสตัดสิน) — ฉบับนี้ยังไม่รองรับ` };
     const target = players.find(p => p.id === targetId);
 
-    const result = this.applyCard(cur, card, target);
+    const result = this.applyCard(cur, effCard, target);
     if (!result.ok) return result;
 
     // นำการ์ดออกจากมือ (อุปกรณ์เข้าช่อง, การ์ดหน่วงเวลาเข้าช่องตัดสิน, อื่นๆ เข้ากองทิ้ง)
@@ -791,6 +1292,7 @@ class Game {
     const color = opts.color || 'black';
     const dmg = opts.dmg != null ? opts.dmg : (from.wined ? 2 : 1);
     from.wined = false;
+    const srcCard = opts.card || null;   // การ์ดต้นทาง (ใช้กับ Jian Xiong ของเฉาเชา)
     const dodgesNeeded = opts.dodgesNeeded != null ? opts.dodgesNeeded
       : (CHAR_PASSIVES[from.character]?.needsTwoDodge ? 2 : 1);
     // ดาบหยินหยาง (阴阳双股剑): โจมตีเพศตรงข้าม → จั่ว 1 ใบ
@@ -799,6 +1301,19 @@ class Game {
       from.hand.push(...this.drawCards(1));
       this.addLog(from.username, `☯️ [ดาบหยินหยาง/阴阳双股剑] โจมตีเพศตรงข้าม — จั่ว 1 ใบ`);
     }
+    // หม่าเฉา (马超) — Tie Ji (铁骑): โจมตีโดน → ตัดสิน ถ้าแดง เป้าหมายหลบไม่ได้ (เป้าหมายเดียว)
+    if (CHAR_PASSIVES[from.character]?.tieji && target) {
+      const flip = this.drawCards(1)[0];
+      if (flip) this.discardPile.push(flip);
+      const tag = flip ? `${flip.rank}${flip.suit}` : '—';
+      if (flip && flip.color === 'red') {
+        this.addLog(from.username, `🐎 [ทแกล้วทหารม้า/铁骑] เปิด ${tag}(แดง) — ${target.username} หลบไม่ได้!`);
+        this.dealDamage(target, dmg, from, { card: srcCard, isAttack: true, color });
+        return;
+      } else if (flip) {
+        this.addLog(from.username, `🐎 [ทแกล้วทหารม้า/铁骑] เปิด ${tag}(ดำ) — หลบได้ตามปกติ`);
+      }
+    }
     // ง้าวฟ้า (方天画戟): โจมตีเป็นไพ่ใบสุดท้ายในมือ → กระทบเป้าหมายอื่นในระยะเพิ่มได้ถึง 2
     if (from.equipment?.weapon?.name === 'Sky Piercing Halberd' && from.hand.length <= 1) {
       const extra = this.room.players.filter(p => p.hp > 0 && p.id !== from.id
@@ -806,11 +1321,11 @@ class Game {
       if (extra.length) {
         this.addLog(from.username, `🩸 [ง้าวฟ้า/方天画戟] โจมตีไพ่ใบสุดท้าย — กระทบ ${extra.length + 1} เป้าหมาย!`);
         this.requestGroupResponse('dodge', [target, ...extra], from, 'Attack',
-          { damage: dmg, attackCardColor: color, dodgesNeeded });
+          { damage: dmg, attackCardColor: color, dodgesNeeded, card: srcCard });
         return;
       }
     }
-    this.requestResponse('dodge', target, from, 'Attack', { damage: dmg, attackCardColor: color, dodgesNeeded });
+    this.requestResponse('dodge', target, from, 'Attack', { damage: dmg, attackCardColor: color, dodgesNeeded, card: srcCard });
   }
 
   // เปิดหน้าต่าง [ขัดขวาง] ถ้าเป้าหมายมีการ์ดขัดขวาง — ไม่งั้นใช้เอฟเฟคทันที
@@ -829,14 +1344,15 @@ class Game {
     if (CHAR_PASSIVES[from.character]?.redAsAttack && card.color === 'red' && target && card.name !== 'Attack') {
       if (target.id === from.id) return { ok: false, msg: 'โจมตีตัวเองไม่ได้' };
       if (target.hp <= 0) return { ok: false, msg: 'เป้าหมายถูกกำจัดแล้ว' };
+      if (this.kongChengProtected(target)) return { ok: false, msg: `${target.username} ใช้กลป้อมปราการเปล่า — เป็นเป้าหมายไม่ได้ขณะไม่มีไพ่` };
       const _hasCrossbow = from.equipment?.weapon?.name === 'Zhuge Crossbow';
       const _unlimited = _hasCrossbow || !!CHAR_PASSIVES[from.character]?.unlimitedAttacks;
       if (from.attacksThisTurn >= 1 && !_unlimited) return { ok: false, msg: 'โจมตีได้เพียง 1 ครั้งต่อตา' };
       if (!this.inAttackRange(from, target)) return { ok: false, msg: `เป้าหมายอยู่นอกระยะโจมตี` };
       from.attacksThisTurn++;
-      const _dmg = from.wined ? 2 : 1;
+      const _dmg = (from.wined ? 2 : 1) + (from.luoyiBoost ? 1 : 0);
       this.addLog(from.username, `⚔️ [กวนอู] ${card.name}(♥♦) → โจมตี ${target.username}${_dmg > 1 ? ' 🍶+1' : ''}`);
-      this.issueAttack(from, target, { color: card.color, dmg: _dmg, dodgesNeeded: 1 });
+      this.issueAttack(from, target, { color: card.color, dmg: _dmg, dodgesNeeded: 1, card });
       return { ok: true, logMsg: null };
     }
 
@@ -845,6 +1361,7 @@ class Game {
         if (!target) return { ok: false, msg: 'ต้องเลือกเป้าหมาย' };
         if (target.id === from.id) return { ok: false, msg: 'โจมตีตัวเองไม่ได้' };
         if (target.hp <= 0) return { ok: false, msg: 'เป้าหมายถูกกำจัดแล้ว' };
+        if (this.kongChengProtected(target)) return { ok: false, msg: `${target.username} ใช้กลป้อมปราการเปล่า — เป็นเป้าหมายไม่ได้ขณะไม่มีไพ่` };
         const hasCrossbow = from.equipment?.weapon?.name === 'Zhuge Crossbow';
         const hasUnlimitedAttacks = hasCrossbow || !!CHAR_PASSIVES[from.character]?.unlimitedAttacks;
         if (from.attacksThisTurn >= 1 && !hasUnlimitedAttacks)
@@ -852,16 +1369,16 @@ class Game {
         if (!this.inAttackRange(from, target))
           return { ok: false, msg: `เป้าหมายอยู่นอกระยะโจมตี (ระยะ ${this.distance(from,target)} > ${this.attackRange(from)})` };
         from.attacksThisTurn++;
-        const dmg = from.wined ? 2 : 1;
+        const dmg = (from.wined ? 2 : 1) + (from.luoyiBoost ? 1 : 0);
         const dodgesNeeded = CHAR_PASSIVES[from.character]?.needsTwoDodge ? 2 : 1;
         this.addLog(from.username, `⚔️ โจมตี ${target.username}${dmg > 1 ? ' 🍶+1' : ''}${dodgesNeeded > 1 ? ' (ต้องหลบ 2 ครั้ง!)' : ''}`);
-        this.issueAttack(from, target, { color: card.color, dmg, dodgesNeeded });
+        this.issueAttack(from, target, { color: card.color, dmg, dodgesNeeded, card });
         return { ok: true, logMsg: null };
       }
 
       case 'Peach': {
         if (from.hp >= from.maxHp) return { ok: false, msg: 'พลังชีวิตเต็มแล้ว' };
-        from.hp = Math.min(from.maxHp, from.hp + 1);
+        this.heal(from, 1, from);
         return { ok: true, logMsg: `🍑 ใช้เพอชรักษาตัวเอง (+1 พลังชีวิต)` };
       }
 
@@ -875,9 +1392,12 @@ class Game {
         if (!target) return { ok: false, msg: 'ต้องเลือกเป้าหมาย' };
         if (target.id === from.id) return { ok: false, msg: 'ท้าดวลตัวเองไม่ได้' };
         if (target.hp <= 0) return { ok: false, msg: 'เป้าหมายถูกกำจัดแล้ว' };
+        if (this.kongChengProtected(target)) return { ok: false, msg: `${target.username} ใช้กลป้อมปราการเปล่า — เป็นเป้าหมายไม่ได้ขณะไม่มีไพ่` };
         // เป้าหมายผลัดกันเล่นโจมตีกับผู้ใช้ ใครเล่นไม่ได้ก่อนเสีย 1 พลังชีวิต
-        this.addLog(from.username, `⚔️ ท้าดวล ${target.username}`);
-        this.requestResponse('duel', target, from, 'Duel', { damage: 1, negatable: true });
+        // หลู่ปู้ (无双): คู่ประลองที่เผชิญหน้าหลู่ปู้ต้องเล่น [โจมตี] 2 ใบทุกครั้ง
+        const atkNeeded = CHAR_PASSIVES[from.character]?.duelTwoAttacks ? 2 : 1;
+        this.addLog(from.username, `⚔️ ท้าดวล ${target.username}${atkNeeded > 1 ? ' (ต้องเล่นโจมตี 2 ใบ!)' : ''}`);
+        this.requestResponse('duel', target, from, 'Duel', { damage: 1, negatable: true, attacksNeeded: atkNeeded });
         return { ok: true, logMsg: null };
       }
 
@@ -891,7 +1411,7 @@ class Game {
         if (target.hand.length === 0 && !Object.values(target.equipment).some(Boolean))
           return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
         const doSteal = () => {
-          const loot = this.takeOneCard(target);
+          const loot = this.takeOneCard(target, true);
           if (loot) { from.hand.push(loot); this.addLog(from.username, `🃏 ขโมยการ์ดจาก ${target.username}`); }
           else this.addLog(from.username, `🃏 ขโมย ${target.username} — แต่ไม่มีการ์ดให้ริบแล้ว`);
         };
@@ -906,7 +1426,7 @@ class Game {
         if (target.hand.length === 0 && !Object.values(target.equipment).some(Boolean))
           return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
         const doBurn = () => {
-          const removed = this.takeOneCard(target);
+          const removed = this.takeOneCard(target, true);
           if (removed) { this.discardPile.push(removed); this.addLog(from.username, `🔥 ทำลายการ์ดของ ${target.username}`); }
           else this.addLog(from.username, `🔥 ทำลายสะพาน ${target.username} — แต่ไม่มีการ์ดแล้ว`);
         };
@@ -957,7 +1477,7 @@ class Game {
 
       case 'Oath of the Peach Garden': {
         this.room.players.filter(p => p.hp > 0 && p.hp < p.maxHp).forEach(p => {
-          p.hp = Math.min(p.maxHp, p.hp + 1);
+          this.heal(p, 1, from);
         });
         return { ok: true, logMsg: `🍑🌸 สาบานในสวนลูกพีช — ทุกคนรักษา 1 พลังชีวิต` };
       }
@@ -1004,14 +1524,19 @@ class Game {
   }
 
   // หยิบ 1 ใบจากมือ (สุ่ม) หรืออุปกรณ์ของเป้าหมาย
-  takeOneCard(target) {
+  //   fireTriggers=true → เรียกทักษะเสียไพ่/เสียอุปกรณ์ (Lian Ying / Xiao Ji)
+  takeOneCard(target, fireTriggers = false) {
     if (target.hand.length > 0) {
-      return target.hand.splice(Math.floor(Math.random() * target.hand.length), 1)[0];
+      const handBefore = target.hand.length;
+      const c = target.hand.splice(Math.floor(Math.random() * target.hand.length), 1)[0];
+      if (fireTriggers) this.afterHandLoss(target, handBefore);
+      return c;
     }
     for (const slot of ['weapon','armor','atkMount','defMount']) {
       if (target.equipment[slot]) {
         const c = target.equipment[slot];
         target.equipment[slot] = null;
+        if (fireTriggers) this.afterLoseEquip(target, 1);
         return c;
       }
     }
@@ -1257,6 +1782,17 @@ class Game {
       }
     }
 
+    // ── ทักษะเจ้านาย (护驾/激将): เจ้านายไม่ป้องกันเอง → ขอให้ฝ่ายเดียวกันเล่นแทน ──
+    if (!defended && !this._lordAssistDone) {
+      const la = this._lordAssistFor(responder, type);
+      if (la) {
+        this.lordAssist = { lordId: responder.id, type, sourceId: source?.id, cardName, need: la.need, queue: la.queue, idx: 0 };
+        this._promptLordAssist();   // pending ยังอยู่ — เมื่อจบจะเรียก resolveResponse ซ้ำ
+        return { ok: true };
+      }
+    }
+    this._lordAssistDone = false;
+
     this.pending = null;
 
     // ── ยืมดาบ (借刀杀人) ──
@@ -1274,6 +1810,7 @@ class Game {
         responder.equipment.weapon = null;
         source.hand.push(wp);
         this.addLog(source.username, `🗡️ ยืมดาบสำเร็จ — ริบอาวุธ "${wp.name}" จาก ${responder.username}`);
+        this.afterLoseEquip(responder, 1);
       } else {
         this.addLog(source.username, `🗡️ ยืมดาบ — ${responder.username} ไม่มีอาวุธให้ริบแล้ว`);
       }
@@ -1282,9 +1819,17 @@ class Game {
 
     // ── ท้าดวล (决斗): สลับกันโจมตีจนมีฝ่ายเล่นไม่ได้ ──
     if (type === 'duel') {
+      const need = payload.attacksNeeded || 1;
       if (defended) {
-        this.addLog(source.username, `↩️ ${responder.username} โต้! ตอนนี้ ${source.username} ต้องโจมตี`);
-        this.requestResponse('duel', source, responder, 'Duel', { damage: payload.damage });
+        // หลู่ปู้ (无双): ฝ่ายที่เผชิญหน้าต้องเล่นโจมตีให้ครบก่อน จึงนับว่าโต้สำเร็จ
+        if (need > 1) {
+          this.addLog(responder.username, `⚔️ ต้องเล่นโจมตีอีก ${need - 1} ใบ (无双)`);
+          this.requestResponse('duel', responder, source, 'Duel', { ...payload, negatable: false, attacksNeeded: need - 1 });
+          return { ok: true };
+        }
+        const swapNeed = CHAR_PASSIVES[responder.character]?.duelTwoAttacks ? 2 : 1;
+        this.addLog(source.username, `↩️ ${responder.username} โต้! ตอนนี้ ${source.username} ต้องโจมตี${swapNeed > 1 ? ' 2 ใบ' : ''}`);
+        this.requestResponse('duel', source, responder, 'Duel', { damage: payload.damage, attacksNeeded: swapNeed });
         return { ok: true };
       }
       this.dealDamage(responder, payload.damage, source);
@@ -1303,11 +1848,14 @@ class Game {
     // ── หลบโจมตี (dodge) ──
     if (!defended) {
       this.addLog(responder.username, '💢 ไม่ได้หลบ — รับความเสียหาย');
+      const atkCtx = { card: payload.card, isAttack: true, color: payload.attackCardColor };
       // Frost Sword (冰封剑): แทนการทำดาเมจ → ให้เป้าหมายทิ้งการ์ด 2 ใบ
       if (source?.equipment?.weapon?.name === 'Frost Sword' && responder.hand.length >= 2 && responder.hp > 1) {
+        const handBefore = responder.hand.length;
         const lost = [responder.hand.pop(), responder.hand.pop()];
         lost.forEach(c => this.discardPile.push(c));
         this.addLog(source.username, `❄️ [ดาบน้ำแข็ง/冰封剑] ยกเลิกดาเมจ — ${responder.username} ทิ้งการ์ด 2 ใบแทน`);
+        this.afterHandLoss(responder, handBefore);
         if (!this.dyingPlayerId) this._continueAfterResponse();
         return { ok: true };
       }
@@ -1319,9 +1867,10 @@ class Game {
           responder.equipment[mountSlot] = null;
           this.discardPile.push(mount);
           this.addLog(source.username, `🏹 [ธนูกิเลน/麒麟弓] ทำลายม้าของ ${responder.username}: ${mount.name}`);
+          this.afterLoseEquip(responder, 1);
         }
       }
-      this.dealDamage(responder, payload.damage, source);
+      this.dealDamage(responder, payload.damage, source, atkCtx);
       if (!this.dyingPlayerId) this._continueAfterResponse();
       return { ok: true };
     }
@@ -1357,10 +1906,12 @@ class Game {
   }
 
   // ─── ทำความเสียหาย + ตรวจการตาย ── คืน true ถ้าเข้าสภาวะใกล้ตาย ─────────────────
-  dealDamage(player, amount, source) {
+  //   ctx = { card, isAttack, color } — บริบทแหล่งที่มา (ใช้กับทักษะ trigger ตอนรับดาเมจ)
+  dealDamage(player, amount, source, ctx = {}) {
     player.hp -= amount;
     this.addLog('ระบบ', `💔 ${player.username} เสีย ${amount} พลังชีวิต (เหลือ ${Math.max(0,player.hp)})`);
     if (player.hp <= 0) { this.enterDying(player, source); return true; }
+    this.afterDamage(player, amount, source, ctx);   // ทริกเกอร์ทักษะหลังรับดาเมจ
     this.broadcast();
     return false;
   }
@@ -1391,7 +1942,11 @@ class Game {
     if (dying.hp > 0) return this.finishDying(true);
     while (d.idx < d.order.length) {
       const saver = this.room.players.find(p => p.id === d.order[d.idx]);
-      if (saver && saver.hp > 0 && saver.hand.some(c => c.name === 'Peach')) {
+      // หัวถัว (急救): ในตาคนอื่นใช้ไพ่แดงแทน [ลูกท้อ] → ถือว่ามี [เพอช]
+      const huatuoRed = saver && CHAR_PASSIVES[saver.character]?.redAsPeach
+        && this.room.players[this.currentPlayer]?.id !== saver.id
+        && saver.hand.some(c => c.color === 'red');
+      if (saver && saver.hp > 0 && (saver.hand.some(c => c.name === 'Peach') || huatuoRed)) {
         clearInterval(this.dyingTimer);
         this._dyingAsync = true;
         this.timer = 20;
@@ -1422,14 +1977,23 @@ class Game {
     if (d.order[d.idx] !== saverId) return { ok: false, msg: 'ยังไม่ถึงตาคุณใช้เพอช' };
     const saver = this.room.players.find(p => p.id === saverId);
     if (!saver) return { ok: false };
-    const idx = saver.hand.findIndex(c => c.id === cardId && c.name === 'Peach');
+    // หัวถัว (急救): ในตาคนอื่นใช้ไพ่แดงแทน [ลูกท้อ] ได้
+    const huatuoRed = CHAR_PASSIVES[saver.character]?.redAsPeach
+      && this.room.players[this.currentPlayer]?.id !== saver.id;
+    const idx = saver.hand.findIndex(c => c.id === cardId
+      && (c.name === 'Peach' || (huatuoRed && c.color === 'red')));
     if (idx < 0) return { ok: false, msg: 'ไม่มีเพอช' };
-    saver.hand.splice(idx, 1).forEach(c => this.discardPile.push(c));
+    const used = saver.hand.splice(idx, 1)[0];
+    this.discardPile.push(used);
     const dying = this.room.players.find(p => p.id === d.playerId);
-    dying.hp = Math.min(dying.maxHp, dying.hp + 1);
+    // ซุนฉวน (孙权) — Jiu Yuan (救援): ฝ่ายง่อก๊กใช้ [เพอช] กับซุนฉวน → ฟื้นเพิ่ม 1
+    let amt = 1;
+    if (CHAR_PASSIVES[dying.character]?.jiuyuan && saver.id !== dying.id && kingdomOf(saver.character) === 'WU') amt = 2;
+    this.heal(dying, amt, saver);
+    if (used.name !== 'Peach') this.addLog(saver.username, `💊 [ปฐมพยาบาล/急救] ใช้ไพ่แดงแทน [ลูกท้อ]`);
     this.addLog(saver.username, saver.id === dying.id
-      ? '🍑 ใช้เพอชช่วยตัวเองรอดตายอย่างหวุดหวิด!'
-      : `🍑 ใช้เพอชช่วย ${dying.username} ให้รอดตาย!`);
+      ? `🍑 ใช้เพอชช่วยตัวเองรอดตายอย่างหวุดหวิด!${amt > 1 ? ' (+1 救援)' : ''}`
+      : `🍑 ใช้เพอชช่วย ${dying.username} ให้รอดตาย!${amt > 1 ? ' (+1 救援)' : ''}`);
     clearInterval(this.dyingTimer);
     this.promptDyingSave();
     return { ok: true };
@@ -1463,6 +2027,12 @@ class Game {
     if (!wasAsync) { this.broadcast(); return; }   // โหมด sync — ผู้เรียกจะเดินเกมต่อเอง
     if (this.room.state === 'ended') { this.broadcast(); return; }
     const cur = this.room.players[this.currentPlayer];
+    // ใกล้ตายจาก Xiao Guo (骁果) ช่วงท้ายตา → เดินคิว Xiao Guo / ส่งตาต่อ
+    if (this._xiaoguoAdvance) {
+      this._xiaoguoAdvance = false;
+      if (this.xiaoguo) { this.xiaoguo.idx++; this.xiaoguo.phase = 'ask'; return this._promptXiaoguo(); }
+      return this._advanceTurn();
+    }
     // ใกล้ตายระหว่างเฟสตัดสิน (สายฟ้า) ของผู้เล่นปัจจุบัน → ต่อด้วยเฟสจั่ว/จบตา
     if (this._resumeTurn && cur && cur.id === d.playerId) return this.afterJudgment(player);
     this._continueAfterResponse();
@@ -1545,6 +2115,12 @@ class Game {
     if (this.awaitingDiscard) return; // กำลังรอเลือกทิ้งการ์ดอยู่
     clearInterval(this.timerInterval);
 
+    // หลู่เมิ่ง (吕蒙) — Ke Ji (克己): ไม่ได้ใช้ [โจมตี] ในตานี้ → ข้ามเฟสทิ้งการ์ดได้ (auto)
+    if (CHAR_PASSIVES[cur.character]?.keji && (cur.attacksThisTurn || 0) === 0 && cur.hand.length > cur.hp) {
+      this.addLog(cur.username, `🧘 [ความสงบนิ่ง/克己] ไม่ได้โจมตีในตานี้ — ข้ามเฟสทิ้งการ์ด`);
+      return this.finishTurn();
+    }
+
     // 5) เฟสทิ้งการ์ด — เก็บการ์ดได้ไม่เกินพลังชีวิตปัจจุบัน (ตามคู่มือ)
     const handLimit = Math.max(0, cur.hp);
     const need = cur.hand.length - handLimit;
@@ -1605,8 +2181,26 @@ class Game {
     const players = this.room.players;
     const cur = players[this.currentPlayer];
     this.phase = 'end';
+    // เตียวเสี้ยน (貂蝉) — Bi Yue (闭月): ช่วงท้ายเทิร์น จั่ว 1 ใบ (auto)
+    if (CHAR_PASSIVES[cur.character]?.biyue && cur.hp > 0) {
+      cur.hand.push(...this.drawCards(1));
+      this.addLog(cur.username, `🌙 [ความงามบังจันทร์/闭月] ช่วงท้ายเทิร์น — จั่ว 1 ใบ`);
+    }
     this.addLog(cur.username, `จบตา (เหลือไพ่ ${cur.hand.length} ใบ)`);
 
+    // เยว่จิน (乐进) — Xiao Guo (骁果): ช่วงท้ายเทิร์นของคนอื่น เปิดหน้าต่างให้เยว่จิน
+    const xq = this._xiaoguoQueue(cur);
+    if (xq.length && cur.hp > 0) {
+      this.xiaoguo = { turnPlayerId: cur.id, queue: xq, idx: 0, phase: 'ask', yuejinId: null };
+      this._promptXiaoguo();
+      return;   // พัก — จะ _advanceTurn เมื่อจบ Xiao Guo
+    }
+    this._advanceTurn();
+  }
+
+  // ส่งตาให้ผู้เล่นคนถัดไปที่ยังมีชีวิต
+  _advanceTurn() {
+    const players = this.room.players;
     let next = (this.currentPlayer + 1) % players.length;
     let tries = 0;
     while (players[next].hp <= 0 && tries < players.length) {
@@ -1615,6 +2209,108 @@ class Game {
     }
     this.currentPlayer = next;
     if (this.room.state !== 'ended') this.runTurn();
+  }
+
+  // ─── Xiao Guo (骁果) ของเยว่จิน — ช่วงท้ายเทิร์นคนอื่น ─────────────────────────────
+  _xiaoguoQueue(cur) {
+    return this.room.players.filter(p => p.hp > 0 && p.id !== cur.id
+      && CHAR_PASSIVES[p.character]?.xiaoguo && p.hand.some(c => c.type === 'basic')).map(p => p.id);
+  }
+
+  _promptXiaoguo() {
+    const xg = this.xiaoguo;
+    if (!xg) return;
+    while (xg.idx < xg.queue.length) {
+      const yuejin = this.room.players.find(p => p.id === xg.queue[xg.idx]);
+      const target = this.room.players.find(p => p.id === xg.turnPlayerId);
+      if (yuejin && yuejin.hp > 0 && target && target.hp > 0 && yuejin.hand.some(c => c.type === 'basic')) {
+        xg.phase = 'ask'; xg.yuejinId = yuejin.id;
+        clearInterval(this.xiaoguoTimer);
+        this.timer = 20;
+        this.xiaoguoTimer = setInterval(() => {
+          this.timer--;
+          io.to(this.room.code).emit('timerTick', this.timer);
+          if (this.timer <= 0) { clearInterval(this.xiaoguoTimer); this.useXiaoguo(yuejin.id, null); }
+        }, 1000);
+        const sock = io.sockets.sockets.get(yuejin.socketId);
+        if (sock) sock.emit('askXiaoguo', { targetName: target.username });
+        this.broadcast();
+        return;
+      }
+      xg.idx++;
+    }
+    this._finishXiaoguo();
+  }
+
+  _finishXiaoguo() {
+    clearInterval(this.xiaoguoTimer);
+    this.xiaoguo = null;
+    this._advanceTurn();
+  }
+
+  // เยว่จินตัดสินใจใช้ Xiao Guo (cardId = การ์ดพื้นฐานที่ทิ้ง, null = ไม่ใช้)
+  useXiaoguo(yuejinId, cardId) {
+    const xg = this.xiaoguo;
+    if (!xg || xg.phase !== 'ask' || xg.yuejinId !== yuejinId) return { ok: false, msg: 'ไม่มีหน้าต่าง Xiao Guo' };
+    clearInterval(this.xiaoguoTimer);
+    const yuejin = this.room.players.find(p => p.id === yuejinId);
+    const target = this.room.players.find(p => p.id === xg.turnPlayerId);
+    if (!cardId || !yuejin || !target) { xg.idx++; this._promptXiaoguo(); return { ok: true }; }
+    const idx = yuejin.hand.findIndex(c => c.id === cardId && c.type === 'basic');
+    if (idx < 0) return { ok: false, msg: 'ต้องทิ้งการ์ดพื้นฐาน 1 ใบ' };
+    const handBefore = yuejin.hand.length;
+    const disc = yuejin.hand.splice(idx, 1)[0];
+    this.discardPile.push(disc);
+    this.addLog(yuejin.username, `🎯 [ไม่หวั่นเกรง/骁果] ทิ้ง ${disc.name} — บีบ ${target.username}`);
+    this.afterHandLoss(yuejin, handBefore);
+    const hasEquip = Object.values(target.equipment).some(Boolean);
+    if (!hasEquip) {
+      // ไม่มีอุปกรณ์ให้ทิ้ง → รับ 1 ดาเมจทันที
+      this.addLog(target.username, `🎯 ไม่มีอุปกรณ์ — รับ 1 ดาเมจ (骁果)`);
+      this._xiaoguoAdvance = true;
+      this.dealDamage(target, 1, yuejin);
+      if (this.dyingPlayerId) return { ok: true };   // รอเพอช → finishDying เดินต่อ
+      this._xiaoguoAdvance = false;
+      xg.idx++; xg.phase = 'ask'; this._promptXiaoguo();
+      return { ok: true };
+    }
+    // มีอุปกรณ์ → ถามเป้าหมายให้เลือกทิ้งอุปกรณ์ หรือ รับดาเมจ
+    xg.phase = 'respond';
+    this.timer = 20;
+    this.xiaoguoTimer = setInterval(() => {
+      this.timer--;
+      io.to(this.room.code).emit('timerTick', this.timer);
+      if (this.timer <= 0) { clearInterval(this.xiaoguoTimer); this.respondXiaoguo(target.id, null); }
+    }, 1000);
+    const sock = io.sockets.sockets.get(target.socketId);
+    if (sock) sock.emit('askXiaoguoRespond', { yuejinName: yuejin.username });
+    this.broadcast();
+    return { ok: true };
+  }
+
+  // เป้าหมายตอบ Xiao Guo (equipSlot = ทิ้งอุปกรณ์ช่องนั้น, null = ยอมรับ 1 ดาเมจ)
+  respondXiaoguo(targetId, equipSlot) {
+    const xg = this.xiaoguo;
+    if (!xg || xg.phase !== 'respond' || xg.turnPlayerId !== targetId) return { ok: false, msg: 'ไม่มีหน้าต่าง Xiao Guo' };
+    clearInterval(this.xiaoguoTimer);
+    const target = this.room.players.find(p => p.id === targetId);
+    const yuejin = this.room.players.find(p => p.id === xg.yuejinId);
+    if (equipSlot && target.equipment[equipSlot]) {
+      const eq = target.equipment[equipSlot];
+      target.equipment[equipSlot] = null;
+      this.discardPile.push(eq);
+      this.addLog(target.username, `⚙️ ทิ้งอุปกรณ์ "${eq.name}" (骁果)`);
+      this.afterLoseEquip(target, 1);
+      xg.idx++; xg.phase = 'ask'; this._promptXiaoguo();
+      return { ok: true };
+    }
+    this.addLog(target.username, `🎯 ไม่ทิ้งอุปกรณ์ — รับ 1 ดาเมจ (骁果)`);
+    this._xiaoguoAdvance = true;
+    this.dealDamage(target, 1, yuejin);
+    if (this.dyingPlayerId) return { ok: true };
+    this._xiaoguoAdvance = false;
+    xg.idx++; xg.phase = 'ask'; this._promptXiaoguo();
+    return { ok: true };
   }
 }
 
@@ -1794,12 +2490,12 @@ io.on('connection', (socket) => {
     broadcastRoom(room);
   });
 
-  socket.on('playCard', ({ cardId, targetId }) => {
+  socket.on('playCard', ({ cardId, targetId, asName }) => {
     const info = sockets.get(socket.id);
     if (!info) return;
     const room = rooms.get(info.roomCode);
     if (!room || !room.game) return;
-    const result = room.game.playCard(info.playerId, cardId, targetId);
+    const result = room.game.playCard(info.playerId, cardId, targetId, asName || null);
     if (!result.ok) return socket.emit('error', result.msg);
     // Game.playCard เรียก broadcast() ให้แล้ว
   });
@@ -1844,13 +2540,59 @@ io.on('connection', (socket) => {
   });
 
   // ผู้เล่นกดจั่วการ์ดเอง (เฟสจั่ว)
-  socket.on('drawCards', () => {
+  socket.on('drawCards', (opts = {}) => {
     const info = sockets.get(socket.id);
     if (!info) return;
     const room = rooms.get(info.roomCode);
     if (!room || !room.game) return;
-    const result = room.game.playerDraw(info.playerId);
+    const result = room.game.playerDraw(info.playerId, false, opts || {});
     if (result && !result.ok && result.msg) socket.emit('error', result.msg);
+  });
+
+  // เป้าหมายของ Fan Jian (反间) ทายชนิดไพ่
+  socket.on('fanjianGuess', ({ suit }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    const result = room.game.resolveFanjian(info.playerId, suit);
+    if (result && !result.ok && result.msg) socket.emit('error', result.msg);
+  });
+
+  // ซือหม่าอี้ใช้ Gui Cai (鬼才) เปลี่ยนไพ่ตัดสิน (cardId=null = ไม่เปลี่ยน)
+  socket.on('guicaiReplace', ({ cardId }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    room.game.resolveGuicai(info.playerId, cardId || null);
+  });
+
+  // เยว่จิน/ผู้เล่นตอบ Xiao Guo (骁果) — discardId(ผู้ใช้) หรือ targetEquipSlot/รับดาเมจ
+  socket.on('xiaoguoUse', ({ cardId }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    const result = room.game.useXiaoguo(info.playerId, cardId || null);
+    if (result && !result.ok && result.msg) socket.emit('error', result.msg);
+  });
+
+  socket.on('xiaoguoRespond', ({ equipSlot }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    room.game.respondXiaoguo(info.playerId, equipSlot || null);
+  });
+
+  // ทักษะเจ้านาย: ฝ่ายเดียวกันเสนอเล่นการ์ดแทน (Hu Jia / Ji Jiang)
+  socket.on('lordAssist', ({ cardId }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    room.game.resolveLordAssist(info.playerId, cardId || null);
   });
 
   socket.on('endTurn', () => {

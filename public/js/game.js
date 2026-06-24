@@ -281,6 +281,30 @@ socket.on('askHarvest', () => {
   openHarvestModal();
 });
 
+// หว่านเมล็ดหวาดระแวง (反间): เป็นเป้าหมาย → ทายชนิดไพ่
+socket.on('askFanjian', ({ sourceName }) => {
+  openFanjianModal(sourceName);
+});
+
+// เนโครแมนซี (鬼才): ซือหม่าอี้เปลี่ยนไพ่ตัดสิน
+socket.on('askGuicai', ({ flip, judgeName, jcardName }) => {
+  openGuicaiModal(flip, judgeName, jcardName);
+});
+
+// ไม่หวั่นเกรง (骁果): เยว่จินเลือกทิ้งการ์ดพื้นฐานเพื่อใช้ทักษะ
+socket.on('askXiaoguo', ({ targetName }) => {
+  openXiaoguoModal(targetName);
+});
+// เป้าหมายของ Xiao Guo เลือกทิ้งอุปกรณ์ หรือ รับดาเมจ
+socket.on('askXiaoguoRespond', ({ yuejinName }) => {
+  openXiaoguoRespondModal(yuejinName);
+});
+
+// ทักษะเจ้านาย (护驾/激将): ฝ่ายเดียวกันเสนอเล่นการ์ดแทนเจ้านาย
+socket.on('askLordAssist', ({ need, lordName, skill }) => {
+  openLordAssistModal(need, lordName, skill);
+});
+
 socket.on('error', (msg) => notify(msg, 'error'));
 socket.on('kicked', ({ reason }) => {
   notify(reason, 'error', 5000);
@@ -841,7 +865,9 @@ function cardPlayIssue(card) {
   const me = STATE.room?.players.find(p => p.id === STATE.playerId);
   // Guan Yu: ไพ่แดงทุกใบเล่นเป็นโจมตีได้ (ข้ามการตรวจ response-only)
   const isGuanyuRed = me?.character === 'guanyu' && card.color === 'red';
-  if (RESPONSE_ONLY_CARDS.includes(card.name) && !isGuanyuRed) return 'การ์ดนี้ใช้ตอบโต้เท่านั้น เล่นเองไม่ได้';
+  // ทักษะแปลงการ์ด (กานหนิง/ต้าเฉียว): การ์ดตอบโต้อาจใช้แทนการ์ดอื่นได้
+  const hasSub = getSubstitutions(me, card).length > 0;
+  if (RESPONSE_ONLY_CARDS.includes(card.name) && !isGuanyuRed && !hasSub) return 'การ์ดนี้ใช้ตอบโต้เท่านั้น เล่นเองไม่ได้';
   if (card.name === 'Peach') {
     if (me && me.hp >= me.maxHp) return 'พลังชีวิตเต็มแล้ว ใช้เพอชไม่ได้';
   }
@@ -907,27 +933,76 @@ function onCardClick(card) {
   }
 
   STATE.selectedCard = card;
+  STATE.playAs = null;
   const me2 = players.find(p => p.id === STATE.playerId);
-  const isGuanyuRedCard = me2?.character === 'guanyu' && card.color === 'red' && card.name !== 'Attack';
-  const needsTarget = ['Attack','Steal','Burning Bridges','Borrowed Sword','Duel','Overindulgence'].includes(card.name) || isGuanyuRedCard;
 
+  // ── ทักษะแปลงการ์ด (กานหนิง: ดำ→เผาสะพาน, ต้าเฉียว: ♦→มัวเมา) ──
+  const subs = getSubstitutions(me2, card);
+  if (subs.length) { openSubChooser(card, subs); return; }
+
+  beginCardPlay(card, me2, null);
+}
+
+// ทักษะแปลงการ์ดของผู้เล่น (เทียบกับ CHAR_PASSIVES ฝั่งเซิร์ฟเวอร์)
+function getSubstitutions(me, card) {
+  if (!me) return [];
+  const out = [];
+  if (me.character === 'ganning' && card.color === 'black' && card.name !== 'Burning Bridges')
+    out.push({ as: 'Burning Bridges', label: '🔥 เผาสะพาน (奇袭)', needsTarget: true });
+  if (me.character === 'daqiao' && card.suit === '♦' && card.name !== 'Overindulgence')
+    out.push({ as: 'Overindulgence', label: '🍵 มัวเมา (国色)', needsTarget: true });
+  return out;
+}
+
+// เมนูเลือกว่าจะเล่นการ์ดปกติ หรือใช้เป็นการ์ดอื่น (ทักษะแปลง)
+function openSubChooser(card, subs) {
+  const overlay = document.getElementById('modal-skill');
+  const me = STATE.room.players.find(p => p.id === STATE.playerId);
+  const cd = window.CARD_DATA[card.name];
+  const opts = [{ as: null, label: `เล่นปกติ (${cd?.nameTh || card.name})`, needsTarget: ['Attack','Steal','Burning Bridges','Borrowed Sword','Duel','Overindulgence'].includes(card.name) }, ...subs];
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:360px;max-width:92vw;text-align:center">
+    <h2 style="margin:0 0 12px;font-size:1.05rem;color:#d2a8e8">ใช้การ์ดนี้อย่างไร?</h2>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${opts.map((o, i) => `<button class="btn btn-confirm sub-opt" data-i="${i}" style="width:100%">${o.label}</button>`).join('')}
+    </div>
+    <button class="btn btn-cancel" id="sub-cancel" style="width:100%;margin-top:10px">ยกเลิก</button></div>`;
+  overlay.classList.add('active');
+  overlay.querySelectorAll('.sub-opt').forEach(el => {
+    el.addEventListener('click', () => {
+      overlay.classList.remove('active');
+      const o = opts[+el.dataset.i];
+      STATE.playAs = o.as;
+      beginCardPlay(card, me, o.as, o.needsTarget);
+    });
+  });
+  document.getElementById('sub-cancel').addEventListener('click', () => {
+    overlay.classList.remove('active');
+    STATE.selectedCard = null; STATE.playAs = null; renderGame();
+  });
+}
+
+function beginCardPlay(card, me2, asName, forceTarget) {
+  const isGuanyuRedCard = me2?.character === 'guanyu' && card.color === 'red' && card.name !== 'Attack';
+  const needsTarget = forceTarget != null ? forceTarget
+    : (['Attack','Steal','Burning Bridges','Borrowed Sword','Duel','Overindulgence'].includes(card.name) || isGuanyuRedCard);
+  STATE.playAs = asName || null;
   if (needsTarget) {
     STATE.selectingTarget = true;
     notify(isGuanyuRedCard ? `[กวนอู] เลือกเป้าหมายโจมตี (${card.name})` : 'เลือกเป้าหมาย...', 'info', 2000);
     renderGame();
   } else {
-    // Play immediately (AoE or self-target)
     STATE.selectingTarget = false;
-    socket.emit('playCard', { cardId: card.id, targetId: null });
-    STATE.selectedCard = null;
+    socket.emit('playCard', { cardId: card.id, targetId: null, asName: STATE.playAs });
+    STATE.selectedCard = null; STATE.playAs = null;
     renderGame();
   }
 }
 
 function confirmPlayCard(targetId) {
   if (!STATE.selectedCard) return;
-  socket.emit('playCard', { cardId: STATE.selectedCard.id, targetId });
+  socket.emit('playCard', { cardId: STATE.selectedCard.id, targetId, asName: STATE.playAs || null });
   STATE.selectedCard = null;
+  STATE.playAs = null;
   STATE.selectingTarget = false;
   renderGame();
 }
@@ -1158,6 +1233,131 @@ function openDiscardPileModal() {
   document.getElementById('modal-discard').classList.add('active');
 }
 
+// ─── Fan Jian (反间) — ทายชนิดไพ่ ───────────────────────────────────────────
+function openFanjianModal(sourceName) {
+  const overlay = document.getElementById('modal-skill');
+  if (!overlay) return;
+  const suits = [['♠','#222'],['♥','#c0392b'],['♦','#c0392b'],['♣','#222']];
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:380px;max-width:92vw;text-align:center">
+    <h2 style="margin:0 0 8px;font-size:1.05rem;color:#d2a8e8">🎭 หว่านเมล็ดหวาดระแวง</h2>
+    <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:14px">${sourceName} บังคับให้คุณทายชนิดไพ่ — ถ้าทายผิดจะรับ 1 ดาเมจ</div>
+    <div style="display:flex;gap:10px;justify-content:center">
+      ${suits.map(([s,c]) => `<button class="btn fanjian-suit" data-suit="${s}" style="font-size:1.6rem;width:60px;height:60px;color:${c};background:#f4e9d0">${s}</button>`).join('')}
+    </div></div>`;
+  overlay.classList.add('active');
+  overlay.querySelectorAll('.fanjian-suit').forEach(el => {
+    el.addEventListener('click', () => {
+      socket.emit('fanjianGuess', { suit: el.dataset.suit });
+      overlay.classList.remove('active');
+    });
+  });
+}
+
+// ─── Gui Cai (鬼才) — เลือกไพ่ในมือเปลี่ยนไพ่ตัดสิน ───────────────────────────────
+function openGuicaiModal(flip, judgeName, jcardName) {
+  const overlay = document.getElementById('modal-skill');
+  const me = STATE.room.players.find(p => p.id === STATE.playerId);
+  const hand = me?.hand || [];
+  const red = (flip.suit === '♥' || flip.suit === '♦');
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:460px;max-width:94vw">
+    <h2 style="margin:0 0 8px;font-size:1.05rem;color:#d2a8e8">🃏 เนโครแมนซี (鬼才)</h2>
+    <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">ไพ่ตัดสินของ ${judgeName || ''} (${jcardName || ''}) คือ <b style="color:${red?'#c0392b':'#222'}">${flip.rank}${flip.suit}</b> — ทิ้งไพ่ในมือ 1 ใบเพื่อเปลี่ยนเป็นไพ่ตัดสินใหม่ หรือปล่อยผ่าน</div>
+    <div class="skill-card-row" id="gc-cards">${hand.map(skillPickCardHTML).join('') || '<div style="color:var(--text-dim)">ไม่มีไพ่</div>'}</div>
+    <button class="btn btn-confirm" id="gc-confirm" style="width:100%;margin-top:12px">เปลี่ยนไพ่ตัดสิน</button>
+    <button class="btn btn-cancel" id="gc-skip" style="width:100%;margin-top:8px">ปล่อยผ่าน</button></div>`;
+  overlay.classList.add('active');
+  let picked = null;
+  overlay.querySelectorAll('.skill-pick').forEach(el => el.addEventListener('click', () => {
+    picked = el.dataset.cardid;
+    overlay.querySelectorAll('.skill-pick').forEach(x => x.classList.remove('selected'));
+    el.classList.add('selected');
+  }));
+  document.getElementById('gc-confirm').addEventListener('click', () => {
+    if (!picked) return notify('เลือกไพ่ที่จะใช้เปลี่ยน', 'error');
+    socket.emit('guicaiReplace', { cardId: picked }); overlay.classList.remove('active');
+  });
+  document.getElementById('gc-skip').addEventListener('click', () => {
+    socket.emit('guicaiReplace', { cardId: null }); overlay.classList.remove('active');
+  });
+}
+
+// ─── Xiao Guo (骁果) — เยว่จินเลือกทิ้งการ์ดพื้นฐาน ───────────────────────────────
+function openXiaoguoModal(targetName) {
+  const overlay = document.getElementById('modal-skill');
+  const me = STATE.room.players.find(p => p.id === STATE.playerId);
+  const basics = (me?.hand || []).filter(c => window.CARD_DATA[c.name]?.type === 'basic' || c.type === 'basic');
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:460px;max-width:94vw">
+    <h2 style="margin:0 0 8px;font-size:1.05rem;color:#d2a8e8">🎯 ไม่หวั่นเกรง (骁果)</h2>
+    <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">ทิ้งการ์ดพื้นฐาน 1 ใบ → บีบ ${targetName || ''} ให้ทิ้งอุปกรณ์ 1 ชิ้น มิฉะนั้นรับ 1 ดาเมจ</div>
+    <div class="skill-card-row" id="xg-cards">${basics.map(skillPickCardHTML).join('') || '<div style="color:var(--text-dim)">ไม่มีการ์ดพื้นฐาน</div>'}</div>
+    <button class="btn btn-confirm" id="xg-confirm" style="width:100%;margin-top:12px">🎯 ใช้ทักษะ</button>
+    <button class="btn btn-cancel" id="xg-skip" style="width:100%;margin-top:8px">ไม่ใช้</button></div>`;
+  overlay.classList.add('active');
+  let picked = null;
+  overlay.querySelectorAll('.skill-pick').forEach(el => el.addEventListener('click', () => {
+    picked = el.dataset.cardid;
+    overlay.querySelectorAll('.skill-pick').forEach(x => x.classList.remove('selected'));
+    el.classList.add('selected');
+  }));
+  document.getElementById('xg-confirm').addEventListener('click', () => {
+    if (!picked) return notify('เลือกการ์ดพื้นฐานที่จะทิ้ง', 'error');
+    socket.emit('xiaoguoUse', { cardId: picked }); overlay.classList.remove('active');
+  });
+  document.getElementById('xg-skip').addEventListener('click', () => {
+    socket.emit('xiaoguoUse', { cardId: null }); overlay.classList.remove('active');
+  });
+}
+
+function openXiaoguoRespondModal(yuejinName) {
+  const overlay = document.getElementById('modal-skill');
+  const me = STATE.room.players.find(p => p.id === STATE.playerId);
+  const eq = me?.equipment || {};
+  const slots = [['weapon','🗡️ อาวุธ'],['armor','🛡️ เกราะ'],['atkMount','🐎 ม้าโจมตี'],['defMount','🐴 ม้าป้องกัน']]
+    .filter(([s]) => eq[s]);
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:420px;max-width:92vw">
+    <h2 style="margin:0 0 8px;font-size:1.05rem;color:#d2a8e8">🎯 ${yuejinName || ''} ใช้ 骁果 ใส่คุณ</h2>
+    <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">ทิ้งอุปกรณ์ 1 ชิ้น หรือ รับ 1 ดาเมจ</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${slots.map(([s,l]) => `<button class="btn btn-confirm xg-eq" data-slot="${s}" style="width:100%">${l}: ${eq[s].name}</button>`).join('')}
+    </div>
+    <button class="btn btn-cancel" id="xg-take" style="width:100%;margin-top:10px">💢 รับ 1 ดาเมจ</button></div>`;
+  overlay.classList.add('active');
+  overlay.querySelectorAll('.xg-eq').forEach(el => el.addEventListener('click', () => {
+    socket.emit('xiaoguoRespond', { equipSlot: el.dataset.slot }); overlay.classList.remove('active');
+  }));
+  document.getElementById('xg-take').addEventListener('click', () => {
+    socket.emit('xiaoguoRespond', { equipSlot: null }); overlay.classList.remove('active');
+  });
+}
+
+// ─── ทักษะเจ้านาย (护驾/激将) — ฝ่ายเดียวกันเสนอเล่นการ์ดแทน ──────────────────────
+function openLordAssistModal(need, lordName, skill) {
+  const overlay = document.getElementById('modal-skill');
+  const me = STATE.room.players.find(p => p.id === STATE.playerId);
+  const cards = (me?.hand || []).filter(c => c.name === need);
+  const needTh = need === 'Dodge' ? 'หลบหลีก' : 'โจมตี';
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:460px;max-width:94vw">
+    <h2 style="margin:0 0 8px;font-size:1.05rem;color:#d2a8e8">🤝 ${skill === '护驾' ? 'ผู้ติดตาม (护驾)' : 'อิทธิพล (激将)'}</h2>
+    <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:10px">เจ้านาย ${lordName || ''} ขอให้คุณเล่น [${needTh}] แทน — เลือกการ์ดเพื่อช่วย หรือปฏิเสธ</div>
+    <div class="skill-card-row" id="la-cards">${cards.map(skillPickCardHTML).join('') || `<div style="color:var(--text-dim)">ไม่มี [${needTh}]</div>`}</div>
+    <button class="btn btn-confirm" id="la-confirm" style="width:100%;margin-top:12px">🤝 เล่นแทนเจ้านาย</button>
+    <button class="btn btn-cancel" id="la-skip" style="width:100%;margin-top:8px">ปฏิเสธ</button></div>`;
+  overlay.classList.add('active');
+  let picked = null;
+  overlay.querySelectorAll('.skill-pick').forEach(el => el.addEventListener('click', () => {
+    picked = el.dataset.cardid;
+    overlay.querySelectorAll('.skill-pick').forEach(x => x.classList.remove('selected'));
+    el.classList.add('selected');
+  }));
+  document.getElementById('la-confirm').addEventListener('click', () => {
+    if (!picked) return notify('เลือกการ์ดก่อน', 'error');
+    socket.emit('lordAssist', { cardId: picked }); overlay.classList.remove('active');
+  });
+  document.getElementById('la-skip').addEventListener('click', () => {
+    socket.emit('lordAssist', { cardId: null }); overlay.classList.remove('active');
+  });
+}
+
 // ─── Skill Modal (ใช้ทักษะตัวละคร) ───────────────────────────────────────────
 function skillPickCardHTML(c) {
   const cd = window.CARD_DATA[c.name];
@@ -1175,25 +1375,33 @@ function openSkillModal() {
   const hand = me?.hand || [];
   const overlay = document.getElementById('modal-skill');
 
-  let body = '';
+  // ประเภททักษะ: confirm | cards | card+target | cards+target | card+target2 | target
+  const multiCard = (sk.needs === 'cards' || sk.needs === 'cards+target');
+  const needsCard = ['cards','card+target','cards+target','card+target2'].includes(sk.needs);
+  const needsTarget = ['card+target','cards+target','card+target2','target'].includes(sk.needs);
+  const multiTarget = (sk.needs === 'card+target2');
+  // เป้าหมายที่เลือกได้ (lijian/jieyin = ตัวละครอื่น; rende = อื่น; huatuo = ทุกคน)
+  const targetPool = STATE.room.players.filter(p => p.hp > 0 &&
+    (sk.key === 'qingnang' ? true : p.id !== STATE.playerId));
+
+  let body = `<div style="color:var(--text-dim);font-size:0.8rem;margin-bottom:8px">${sk.desc}</div>`;
   if (sk.needs === 'confirm') {
-    body = `<div style="text-align:center;margin:8px 0 16px;color:var(--text);line-height:1.6">${sk.desc}</div>
-      <button class="btn btn-confirm" id="skill-confirm" style="width:100%">✨ ยืนยันใช้ทักษะ</button>`;
-  } else if (sk.needs === 'cards') {
-    body = `<div style="color:var(--text-dim);font-size:0.8rem;margin-bottom:8px">${sk.desc}</div>
-      <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:6px">เลือกไพ่ที่จะทิ้ง (เลือกได้หลายใบ):</div>
-      <div class="skill-card-row" id="skill-cards">${hand.map(skillPickCardHTML).join('') || '<div style="color:var(--text-dim)">ไม่มีไพ่ในมือ</div>'}</div>
-      <button class="btn btn-confirm" id="skill-confirm" style="width:100%;margin-top:14px">✨ ทิ้งแล้วจั่วใหม่</button>`;
-  } else if (sk.needs === 'card+target') {
-    const targets = STATE.room.players.filter(p => p.hp > 0).map(p =>
-      `<div class="skill-target" data-target="${p.id}">${p.username}<br><span style="font-size:0.7rem;color:var(--text-dim)">${p.hp}/${p.maxHp}❤</span></div>`
-    ).join('');
-    body = `<div style="color:var(--text-dim);font-size:0.8rem;margin-bottom:8px">${sk.desc}</div>
-      <div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:6px">เลือกไพ่ที่จะทิ้ง 1 ใบ:</div>
-      <div class="skill-card-row" id="skill-cards">${hand.map(skillPickCardHTML).join('')}</div>
-      <div style="color:var(--text-dim);font-size:0.78rem;margin:12px 0 6px">เลือกผู้เล่นที่จะรักษา:</div>
-      <div class="skill-target-row" id="skill-targets">${targets}</div>
-      <button class="btn btn-confirm" id="skill-confirm" style="width:100%;margin-top:14px">💚 ใช้ทักษะ</button>`;
+    body += `<button class="btn btn-confirm" id="skill-confirm" style="width:100%;margin-top:8px">✨ ยืนยันใช้ทักษะ</button>`;
+  } else {
+    if (needsCard) {
+      const label = multiCard ? 'เลือกไพ่ (เลือกได้หลายใบ):' : 'เลือกไพ่ 1 ใบ:';
+      body += `<div style="color:var(--text-dim);font-size:0.78rem;margin-bottom:6px">${label}</div>
+        <div class="skill-card-row" id="skill-cards">${hand.map(skillPickCardHTML).join('') || '<div style="color:var(--text-dim)">ไม่มีไพ่ในมือ</div>'}</div>`;
+    }
+    if (needsTarget) {
+      const tlabel = multiTarget ? 'เลือกเป้าหมาย 2 คน:' : 'เลือกเป้าหมาย:';
+      const targets = targetPool.map(p =>
+        `<div class="skill-target" data-target="${p.id}">${p.username}<br><span style="font-size:0.7rem;color:var(--text-dim)">${p.hp}/${p.maxHp}❤</span></div>`
+      ).join('');
+      body += `<div style="color:var(--text-dim);font-size:0.78rem;margin:12px 0 6px">${tlabel}</div>
+        <div class="skill-target-row" id="skill-targets">${targets}</div>`;
+    }
+    body += `<button class="btn btn-confirm" id="skill-confirm" style="width:100%;margin-top:14px">✨ ใช้ทักษะ</button>`;
   }
 
   overlay.innerHTML = `<div class="modal gold-frame" style="width:460px;max-width:94vw">
@@ -1203,11 +1411,11 @@ function openSkillModal() {
     </div>${body}</div>`;
   overlay.classList.add('active');
 
-  const sel = { cards: new Set(), target: null };
+  const sel = { cards: new Set(), targets: new Set() };
   overlay.querySelectorAll('.skill-pick').forEach(el => {
     el.addEventListener('click', () => {
       const id = el.dataset.cardid;
-      if (sk.needs === 'cards') {
+      if (multiCard) {
         if (sel.cards.has(id)) { sel.cards.delete(id); el.classList.remove('selected'); }
         else { sel.cards.add(id); el.classList.add('selected'); }
       } else {
@@ -1219,22 +1427,30 @@ function openSkillModal() {
   });
   overlay.querySelectorAll('.skill-target').forEach(el => {
     el.addEventListener('click', () => {
-      sel.target = el.dataset.target;
-      overlay.querySelectorAll('.skill-target').forEach(x => x.classList.remove('selected'));
-      el.classList.add('selected');
+      const id = el.dataset.target;
+      if (multiTarget) {
+        if (sel.targets.has(id)) { sel.targets.delete(id); el.classList.remove('selected'); }
+        else {
+          if (sel.targets.size >= 2) return notify('เลือกได้สูงสุด 2 คน', 'error');
+          sel.targets.add(id); el.classList.add('selected');
+        }
+      } else {
+        sel.targets.clear();
+        overlay.querySelectorAll('.skill-target').forEach(x => x.classList.remove('selected'));
+        sel.targets.add(id); el.classList.add('selected');
+      }
     });
   });
   document.getElementById('skill-close').addEventListener('click', () => overlay.classList.remove('active'));
   document.getElementById('skill-confirm').addEventListener('click', () => {
-    let payload = {};
-    if (sk.needs === 'cards') {
-      if (!sel.cards.size) return notify('เลือกไพ่ที่จะทิ้งก่อน', 'error');
-      payload = { cardIds: [...sel.cards] };
-    } else if (sk.needs === 'card+target') {
-      if (!sel.cards.size) return notify('เลือกไพ่ก่อน', 'error');
-      if (!sel.target) return notify('เลือกเป้าหมายก่อน', 'error');
-      payload = { cardId: [...sel.cards][0], targetId: sel.target };
-    }
+    const payload = {};
+    if (needsCard && !sel.cards.size) return notify('เลือกไพ่ก่อน', 'error');
+    if (needsTarget && !sel.targets.size) return notify('เลือกเป้าหมายก่อน', 'error');
+    if (multiTarget && sel.targets.size !== 2) return notify('ต้องเลือก 2 คน', 'error');
+    if (multiCard) payload.cardIds = [...sel.cards];
+    else if (needsCard) payload.cardId = [...sel.cards][0];
+    if (multiTarget) payload.targetIds = [...sel.targets];
+    else if (needsTarget) payload.targetId = [...sel.targets][0];
     socket.emit('useSkill', { payload });
     overlay.classList.remove('active');
   });
@@ -1380,11 +1596,48 @@ document.getElementById('discard-pile')?.addEventListener('click', openDiscardPi
 document.getElementById('deck-pile')?.addEventListener('click', () => {
   const game = STATE.room?.game;
   const players = STATE.room?.players || [];
+  const me = players.find(p => p.id === STATE.playerId);
   const myDrawTurn = game && players[game.currentPlayer]?.id === STATE.playerId
     && game.phase === 'draw' && game.awaitingDraw;
   if (!myDrawTurn) return;
+  // ซวีจู้ (裸衣) / จางเหลียว (突袭): เปิดเมนูทางเลือกเฟสจั่ว
+  if (me?.character === 'xuzhu' || me?.character === 'zhangliao') { openDrawChoiceModal(me); return; }
   socket.emit('drawCards');
 });
+
+// เมนูทางเลือกเฟสจั่ว (Luo Yi / Tu Xi)
+function openDrawChoiceModal(me) {
+  const overlay = document.getElementById('modal-skill');
+  if (!overlay) return;
+  let body = `<button class="btn btn-confirm" id="draw-normal" style="width:100%;margin-bottom:8px">🎴 จั่วการ์ดปกติ</button>`;
+  if (me.character === 'xuzhu')
+    body += `<button class="btn btn-confirm" id="draw-luoyi" style="width:100%">💪 เปลือยกายอุกอาจ (裸衣) — จั่วน้อยลง 1 ใบ, โจมตี/ประลอง +1 ดาเมจ</button>`;
+  if (me.character === 'zhangliao') {
+    const targets = STATE.room.players.filter(p => p.hp > 0 && p.id !== me.id && (p.hand?.length || p.handCount));
+    body += `<div style="color:var(--text-dim);font-size:0.78rem;margin:8px 0 6px">🥷 การโจมตีฉับพลัน (突袭) — เลือกสูงสุด 2 คนเพื่อริบไพ่แทนการจั่ว:</div>
+      <div class="skill-target-row" id="tuxi-targets">${STATE.room.players.filter(p => p.hp > 0 && p.id !== me.id).map(p =>
+        `<div class="skill-target" data-target="${p.id}">${p.username}</div>`).join('')}</div>
+      <button class="btn btn-confirm" id="draw-tuxi" style="width:100%;margin-top:8px">🥷 ริบไพ่ (突袭)</button>`;
+  }
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:420px;max-width:92vw;text-align:center">
+    <h2 style="margin:0 0 12px;font-size:1.05rem;color:#d2a8e8">เฟสจั่วการ์ด</h2>${body}
+    <button class="btn btn-cancel" id="draw-cancel" style="width:100%;margin-top:10px">ยกเลิก</button></div>`;
+  overlay.classList.add('active');
+  const close = () => overlay.classList.remove('active');
+  document.getElementById('draw-normal').addEventListener('click', () => { socket.emit('drawCards'); close(); });
+  document.getElementById('draw-luoyi')?.addEventListener('click', () => { socket.emit('drawCards', { useLuoyi: true }); close(); });
+  const tsel = new Set();
+  overlay.querySelectorAll('#tuxi-targets .skill-target').forEach(el => el.addEventListener('click', () => {
+    const id = el.dataset.target;
+    if (tsel.has(id)) { tsel.delete(id); el.classList.remove('selected'); }
+    else { if (tsel.size >= 2) return notify('เลือกได้สูงสุด 2 คน', 'error'); tsel.add(id); el.classList.add('selected'); }
+  }));
+  document.getElementById('draw-tuxi')?.addEventListener('click', () => {
+    if (!tsel.size) return notify('เลือกอย่างน้อย 1 คน', 'error');
+    socket.emit('drawCards', { tuxiTargets: [...tsel] }); close();
+  });
+  document.getElementById('draw-cancel').addEventListener('click', close);
+}
 
 document.getElementById('btn-leave-lobby').addEventListener('click', () => {
   socket.emit('leaveRoom');
