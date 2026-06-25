@@ -654,7 +654,7 @@ window.CARD_DATA = {
   'Fergana Steed': {
     nameTh: 'ม้าต้าหยวน -1 (大宛良马)', nameEn: 'Fergana Steed', type: 'mount',
     color: '#a29bfe',
-    desc: 'ม้าป้องกัน (-1) — ลดระยะห่างจากผู้อื่นที่จะโจมตีคุณ 1 (ทำให้คนอื่นโจมตีคุณยากขึ้น)',
+    desc: 'ม้าป้องกัน (-1) — เพิ่มระยะห่างจากผู้อื่นที่จะโจมตีคุณ 1 (ทำให้คนอื่นโจมตีคุณยากขึ้น)',
     usage: 'ติดตั้งในช่องม้าป้องกัน',
     image: '/GameCard/Equipment Card/Mount/Fergana Steed.png',
     tips: 'ป้องกันตัวเองจากการถูกโจมตีระยะใกล้'

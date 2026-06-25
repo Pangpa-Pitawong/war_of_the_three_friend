@@ -579,5 +579,62 @@ console.log('\n[BorrowedSword] caster picks the victim the wielder attacks');
   check('caster P0 unharmed (hp 4)', p[0].hp === 4);
 }
 
+// ─── Rock Cleaving Axe (贯石斧) — dodge → attacker may discard 2 to force damage ───
+console.log('\n[RockCleavingAxe] dodged Attack → attacker chooses discard 2 to force damage');
+{
+  const axe = card('Rock Cleaving Axe', 'weapon', '♠', 5, { range: 3 });
+  const atk = card('Attack', 'basic', '♠', 7);
+  const p = [
+    makePlayer(0, 'zhangfei', { equipment: { weapon: axe, armor: null, atkMount: null, defMount: null },
+      hand: [atk, card('Wine','basic','♣',2), card('Peach','basic','♥',3)] }),
+    makePlayer(1, 'guojia'),
+  ];
+  const g = makeGame(p, [card('Dodge','basic')]);
+  g.playCard('P0', atk.id, 'P1');
+  g.resolveResponse('P1', null, true);   // autoDefend = dodge succeeds
+  check('rock axe window opened for attacker', !!g.rockAxe && g.rockAxe.sourceId === 'P0');
+  check('no damage yet (still dodged)', p[1].hp === 4);
+  g.resolveRockAxe('P0', 'use');
+  check('window cleared', !g.rockAxe);
+  check('attacker discarded 2 cards (0 left)', p[0].hand.length === 0);
+  check('target took 1 damage through dodge (hp 3)', p[1].hp === 3);
+}
+
+// ─── Rock Cleaving Axe — attacker may decline (skip) → dodge stands ───
+console.log('\n[RockCleavingAxe] attacker declines → dodge stands, no discard');
+{
+  const axe = card('Rock Cleaving Axe', 'weapon', '♠', 5, { range: 3 });
+  const atk = card('Attack', 'basic', '♠', 7);
+  const p = [
+    makePlayer(0, 'zhangfei', { equipment: { weapon: axe, armor: null, atkMount: null, defMount: null },
+      hand: [atk, card('Wine','basic','♣',2), card('Peach','basic','♥',3)] }),
+    makePlayer(1, 'guojia'),
+  ];
+  const g = makeGame(p, [card('Dodge','basic')]);
+  g.playCard('P0', atk.id, 'P1');
+  g.resolveResponse('P1', null, true);
+  g.resolveRockAxe('P0', 'skip');
+  check('window cleared', !g.rockAxe);
+  check('attacker kept both remaining cards', p[0].hand.length === 2);
+  check('target unharmed (dodge stands)', p[1].hp === 4);
+}
+
+// ─── Rock Cleaving Axe — attacker with <2 cards → no window, dodge stands ───
+console.log('\n[RockCleavingAxe] attacker with <2 hand cards → no window');
+{
+  const axe = card('Rock Cleaving Axe', 'weapon', '♠', 5, { range: 3 });
+  const atk = card('Attack', 'basic', '♠', 7);
+  const p = [
+    makePlayer(0, 'zhangfei', { equipment: { weapon: axe, armor: null, atkMount: null, defMount: null },
+      hand: [atk] }),   // only the Attack → 0 left after playing it
+    makePlayer(1, 'guojia'),
+  ];
+  const g = makeGame(p, [card('Dodge','basic')]);
+  g.playCard('P0', atk.id, 'P1');
+  g.resolveResponse('P1', null, true);
+  check('no rock axe window (hand <2)', !g.rockAxe);
+  check('target unharmed (dodge stands)', p[1].hp === 4);
+}
+
 console.log(`\n──────── ${pass} passed, ${fail} failed ────────`);
 process.exit(fail ? 1 : 0);

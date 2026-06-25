@@ -497,6 +497,8 @@ class Game {
     this.awaitingDiscard = null;   // { playerId, need } — รอผู้เล่นเลือกการ์ดทิ้งตอนจบตา
     this.harvest = null;           // { revealed:[], order:[playerId], idx } — เก็บเกี่ยวอุดมสมบูรณ์
     this.harvestTimer = null;
+    this.rockAxe = null;           // { sourceId, responderId, damage, color, card } — ขวานผ่าหิน (贯石斧)
+    this.rockAxeTimer = null;
     this.log = [];
     this.timer = null;
     this.timerInterval = null;
@@ -1894,6 +1896,7 @@ class Game {
       if (responder.equipment?.armor?.name === 'Eight Trigrams Formation') {
         const topCard = this.drawCards(1)[0];
         if (topCard) {
+          this.emitJudgment(responder, topCard, '🔮 กำแพงปากัว (八卦阵)');   // อนิเมชั่นเปิดไพ่ให้ลุ้น
           this.discardPile.push(topCard);
           if (topCard.color === 'red') {
             this.addLog(responder.username, `🔮 [八卦阵] กลับ ${topCard.name}(แดง) — หลบอัตโนมัติ!`);
@@ -2192,14 +2195,52 @@ class Game {
         return { ok: true };
       }
     }
-    // Rock Cleaving Axe (贯石斧): โจมตีถูกหลบ → ทิ้ง 2 ใบบังคับดาเมจ (อัตโนมัติเมื่อเป้าหมายใกล้ตาย)
-    if (source?.equipment?.weapon?.name === 'Rock Cleaving Axe' && responder.hp <= 2 && source.hand.length >= 2) {
+    // Rock Cleaving Axe (贯石斧): โจมตีถูกหลบ → ผู้โจมตีอาจทิ้งการ์ด 2 ใบเพื่อบังคับดาเมจทะลุการหลบ
+    if (source?.equipment?.weapon?.name === 'Rock Cleaving Axe' && source.hand.length >= 2 && responder.hp > 0) {
+      this._promptRockAxe(responder, source, payload);
+      return { ok: true };   // พักไว้ — รอ resolveRockAxe เดินต่อ
+    }
+    if (!this.dyingPlayerId) this._continueAfterResponse();
+    return { ok: true };
+  }
+
+  // ─── ขวานผ่าหิน (贯石斧) — โจมตีถูกหลบ: ผู้โจมตีเลือกทิ้ง 2 ใบบังคับดาเมจ หรือ ปล่อยผ่าน ──
+  _promptRockAxe(responder, source, payload) {
+    this.rockAxe = { sourceId: source.id, responderId: responder.id,
+      damage: payload.damage, color: payload.attackCardColor, card: payload.card };
+    this.addLog(source.username, `🪓 [ขวานผ่าหิน/贯石斧] ${responder.username} หลบได้ — ${source.username} เลือกได้: ทิ้งการ์ด 2 ใบบังคับดาเมจ หรือ ปล่อยผ่าน`);
+    clearInterval(this.rockAxeTimer);
+    this.timer = 20;
+    this.rockAxeTimer = setInterval(() => {
+      this.timer--;
+      io.to(this.room.code).emit('timerTick', this.timer);
+      if (this.timer <= 0) { clearInterval(this.rockAxeTimer); this.resolveRockAxe(source.id, 'skip'); }
+    }, 1000);
+    const sock = io.sockets.sockets.get(source.socketId);
+    if (sock) sock.emit('askRockAxe', { targetName: responder.username });
+    this.broadcast();
+  }
+
+  // ผู้โจมตีเลือกผลขวานผ่าหิน — choice: 'use' (ทิ้ง 2 ใบบังคับดาเมจ) | 'skip' (ปล่อยผ่าน)
+  resolveRockAxe(playerId, choice) {
+    const ra = this.rockAxe;
+    if (!ra || ra.sourceId !== playerId) return { ok: false, msg: 'ไม่มีหน้าต่างขวานผ่าหินที่รออยู่' };
+    clearInterval(this.rockAxeTimer);
+    this.rockAxe = null;
+    const source = this.room.players.find(p => p.id === playerId);
+    const responder = this.room.players.find(p => p.id === ra.responderId);
+    if (choice === 'use' && source && responder && source.hand.length >= 2 && responder.hp > 0) {
+      const handBefore = source.hand.length;
       const lost = [source.hand.pop(), source.hand.pop()];
       lost.forEach(c => this.discardPile.push(c));
       this.addLog(source.username, `🪓 [ขวานผ่าหิน/贯石斧] ทิ้งการ์ด 2 ใบ — บังคับดาเมจทะลุการหลบ!`);
-      this.dealDamage(responder, payload.damage, source);
+      this.afterHandLoss(source, handBefore);
+      this.dealDamage(responder, ra.damage, source, { card: ra.card, isAttack: true, color: ra.color });
+    } else {
+      this.addLog(source?.username || 'ระบบ', `🪓 [ขวานผ่าหิน/贯石斧] ปล่อยผ่าน`);
     }
     if (!this.dyingPlayerId) this._continueAfterResponse();
+    this.broadcast();
     return { ok: true };
   }
 
@@ -2895,6 +2936,16 @@ io.on('connection', (socket) => {
     const room = rooms.get(info.roomCode);
     if (!room || !room.game) return;
     const result = room.game.resolveGanglie(info.playerId, choice === 'damage' ? 'damage' : 'discard');
+    if (result && !result.ok && result.msg) socket.emit('error', result.msg);
+  });
+
+  // ขวานผ่าหิน (贯石斧): ผู้โจมตีเลือกผลเมื่อโจมตีถูกหลบ — 'use' | 'skip'
+  socket.on('rockAxeChoice', ({ choice }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    const result = room.game.resolveRockAxe(info.playerId, choice === 'use' ? 'use' : 'skip');
     if (result && !result.ok && result.msg) socket.emit('error', result.msg);
   });
 

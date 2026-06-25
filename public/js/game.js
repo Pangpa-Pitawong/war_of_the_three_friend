@@ -315,6 +315,11 @@ socket.on('askGanglie', ({ victimName, tag }) => {
   openGanglieModal(victimName, tag);
 });
 
+// ขวานผ่าหิน (贯石斧): โจมตีถูกหลบ → ผู้โจมตีเลือกทิ้ง 2 ใบบังคับดาเมจ หรือ ปล่อยผ่าน
+socket.on('askRockAxe', ({ targetName }) => {
+  openRockAxeModal(targetName);
+});
+
 // ขโมย (顺手牵羊) / ทำลายสะพาน (过河拆桥): เลือกการ์ดของเป้าหมายที่จะริบ/ทำลาย
 socket.on('askTakeCard', ({ mode, targetName, options }) => {
   openTakeCardModal(mode, targetName, options);
@@ -1530,6 +1535,28 @@ function openGanglieModal(victimName, tag) {
   });
   document.getElementById('gl-damage').addEventListener('click', () => {
     socket.emit('ganglieChoice', { choice: 'damage' }); overlay.classList.remove('active');
+  });
+}
+
+// ─── ขวานผ่าหิน (贯石斧) — โจมตีถูกหลบ: ทิ้งการ์ดในมือ 2 ใบ บังคับดาเมจ หรือ ปล่อยผ่าน ──────
+function openRockAxeModal(targetName) {
+  const overlay = document.getElementById('modal-skill');
+  if (!overlay) return;
+  const me = STATE.room.players.find(p => p.id === STATE.playerId);
+  const handCount = me?.hand?.length ?? 0;
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:420px;max-width:92vw;text-align:center">
+    <h2 style="margin:0 0 8px;font-size:1.05rem;color:#e8a85c">🪓 ขวานผ่าหิน (贯石斧)</h2>
+    <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:14px">${targetName || ''} หลบการโจมตีได้ — คุณสามารถทิ้งการ์ดในมือ 2 ใบ เพื่อบังคับให้การโจมตีเข้าทะลุการหลบ</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn btn-confirm" id="ra-use" style="width:100%">🪓 ทิ้งการ์ดในมือ 2 ใบ — บังคับดาเมจ (มีอยู่ ${handCount} ใบ)</button>
+      <button class="btn btn-cancel" id="ra-skip" style="width:100%">✋ ปล่อยผ่าน</button>
+    </div></div>`;
+  overlay.classList.add('active');
+  document.getElementById('ra-use').addEventListener('click', () => {
+    socket.emit('rockAxeChoice', { choice: 'use' }); overlay.classList.remove('active');
+  });
+  document.getElementById('ra-skip').addEventListener('click', () => {
+    socket.emit('rockAxeChoice', { choice: 'skip' }); overlay.classList.remove('active');
   });
 }
 
