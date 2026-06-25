@@ -54,15 +54,31 @@ console.log('\n[SimaYi] Fan Kui — steal a card from attacker');
   check('simayi stole a card from attacker', p[1].hand.length === 1);
 }
 
-// ─── Guo Jia — Yi Ji (遗计): draw 2 per damage ───
-console.log('\n[GuoJia] Yi Ji — draw 2 on taking 1 damage');
+// ─── Guo Jia — Yi Ji (遗计): view top 2 per damage, distribute ───
+console.log('\n[GuoJia] Yi Ji — view 2 on taking 1 damage, give to anyone');
+{
+  const atk = card('Attack', 'basic', '♠', 7);
+  const d1 = card('Dodge','basic'), d2 = card('Dodge','basic');
+  const p = [makePlayer(0, 'zhangfei', { hand: [atk] }), makePlayer(1, 'guojia')];
+  const g = makeGame(p, [d2, d1]);   // d1 drawn first (top), then d2
+  g.playCard('P0', atk.id, 'P1');
+  g.resolveResponse('P1', null);
+  check('yiji window opened (cards held, not yet in hand)', g.yiji && g.yiji.cards.length === 2 && p[1].hand.length === 0);
+  // guojia keeps one, gives the other to attacker P0
+  g.resolveYiji('P1', [{ cardId: d1.id, toId: 'P1' }, { cardId: d2.id, toId: 'P0' }]);
+  check('guojia kept 1 card', p[1].hand.some(c => c.id === d1.id) && p[1].hand.length === 1);
+  check('attacker received 1 card', p[0].hand.some(c => c.id === d2.id));
+  check('yiji window cleared', !g.yiji);
+}
+// Yi Ji default/timeout → keep all
 {
   const atk = card('Attack', 'basic', '♠', 7);
   const p = [makePlayer(0, 'zhangfei', { hand: [atk] }), makePlayer(1, 'guojia')];
   const g = makeGame(p, [card('Dodge','basic'), card('Dodge','basic')]);
   g.playCard('P0', atk.id, 'P1');
   g.resolveResponse('P1', null);
-  check('guojia drew 2 from Yi Ji', p[1].hand.length === 2);
+  g.resolveYiji('P1', null);   // timeout → keep all
+  check('guojia kept both on timeout', p[1].hand.length === 2);
 }
 
 // ─── Xiahou Dun — Gang Lie (刚烈): non-♥ judgement → source CHOOSES discard 2 / take 1 ───
@@ -509,6 +525,58 @@ console.log('\n[LiuBei] Ji Jiang — SHU ally plays Attack in duel');
   g.resolveResponse('P1', null);
   check('caocao took duel damage (hp 3)', p[1].hp === 3);
   check('liubei unharmed (hp 4)', p[0].hp === 4);
+}
+
+// ─── Zhuge Liang — Guan Xing (观星): peek top X, reorder top/bottom ───
+console.log('\n[Zhuge] Guan Xing — peek & reorder deck at prepare');
+{
+  const a = card('Attack','basic','♠',3), b = card('Peach','basic','♥',4), c = card('Dodge','basic','♣',5);
+  // deck top (pop end) order: c drawn first, then b, then a
+  const p = [makePlayer(0, 'zhuge', { hp: 3, maxHp: 3 })];
+  const g = makeGame(p, [a, b, c]);
+  g.turn = 0;
+  g.runTurn();   // prepare phase → guanxing window
+  check('guanxing window opened, paused before judge', !!g.guanxing && g.phase === 'start');
+  check('guanxing peeked 1 card (1 alive player)', g.guanxing.cards.length === 1);
+  const peeked = g.guanxing.cards[0];
+  // send it to the bottom
+  g.resolveGuanxing('P0', { top: [], bottom: [peeked.id] });
+  check('guanxing resolved, advanced past prepare', !g.guanxing && g.phase !== 'start');
+  check('card moved to bottom of deck (drawn last)', g.deck[0].id === peeked.id);
+}
+{
+  // multi-card ordering: 3 players alive → peek 3, reorder top
+  const a = card('Attack','basic','♠',3), b = card('Peach','basic','♥',4), c = card('Dodge','basic','♣',5);
+  const p = [makePlayer(0, 'zhuge', { hp: 3, maxHp: 3 }), makePlayer(1,'caocao'), makePlayer(2,'liubei')];
+  const g = makeGame(p, [a, b, c]);   // top→ c,b,a
+  g.turn = 0;
+  g.runTurn();
+  check('peeked 3 cards', g.guanxing.cards.length === 3);
+  const ids = g.guanxing.cards.map(x => x.id);
+  // put all back on top with explicit order: want `a` drawn first
+  g.resolveGuanxing('P0', { top: [a.id, b.id, c.id], bottom: [] });
+  check('top[0] (a) is next drawn', g.deck[g.deck.length - 1].id === a.id);
+}
+
+// ─── Borrowed Sword — choose which target the wielder must attack ───
+console.log('\n[BorrowedSword] caster picks the victim the wielder attacks');
+{
+  const weapon = card('Green Dragon Blade', 'weapon', '♠', 5, { range: 3 });
+  const p = [
+    makePlayer(0, 'caocao', { hand: [card('Borrowed Sword', 'stratagem')] }),
+    makePlayer(1, 'zhangfei', { equipment: { weapon, armor: null, atkMount: null, defMount: null }, hand: [card('Attack','basic')] }),
+    makePlayer(2, 'liubei', { hp: 4, maxHp: 4 }),
+  ];
+  const g = makeGame(p);
+  const bs = p[0].hand[0];
+  // force wielder P1 to attack P2 (not the caster)
+  g.playCard('P0', bs.id, 'P1', null, { victimId: 'P2' });
+  check('borrow pending on wielder P1', g.pending && g.pending.type === 'borrow' && g.pending.responderId === 'P1');
+  g.resolveResponse('P1', p[1].hand[0].id);   // wielder complies → attacks chosen victim
+  check('chosen victim P2 must now dodge (not caster)', g.pending && g.pending.type === 'dodge' && g.pending.responderId === 'P2');
+  g.resolveResponse('P2', null);
+  check('victim P2 took 1 damage (hp 3)', p[2].hp === 3);
+  check('caster P0 unharmed (hp 4)', p[0].hp === 4);
 }
 
 console.log(`\n──────── ${pass} passed, ${fail} failed ────────`);
