@@ -1168,9 +1168,15 @@ html, body {
   .game-layout { flex-direction: column; }
   .players-ring::before { width: min(72vw, 60vh); height: min(72vw, 60vh); }
   .players-ring::after { width: min(50vw, 42vh); height: min(50vw, 42vh); }
-  .player-node { --pw: clamp(50px, 13vw, 72px); }
-  .player-node-name { font-size: 0.62rem; }
-  .player-hp-text { font-size: 0.56rem; }
+  /* จำกัดความกว้างของ node ให้เท่ารูปตัวละคร — กันการ์ดผู้เล่นซ้อนทับกันบนวงแคบ
+     (ข้อความยาว เช่น "HP · ชื่อตัวละคร · บทบาท" จะถูกตัดด้วย ellipsis แทนการดันความกว้าง) */
+  .player-node { --pw: clamp(50px, 13vw, 72px); width: var(--pw); gap: 3px; }
+  .player-node-name { font-size: 0.62rem; max-width: 100%; }
+  .player-hp-text {
+    font-size: 0.56rem; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .player-hp-bar { width: 100%; }
   .role-card-mini { width: 20px; height: 28px; left: -6px; }
   .equip-card { width: 22px; }
 
@@ -1205,8 +1211,9 @@ html, body {
   .menu-logo h1 { font-size: 1.4rem; }
 }
 
-/* จอเตี้ย (โน้ตบุ๊ก): ย่อ node + กองไพ่กลาง ให้ผู้เล่นบน/ล่างไม่ทับกองไพ่ตรงกลาง */
-@media (max-height: 820px) {
+/* จอเตี้ย (โน้ตบุ๊กแนวนอน): ย่อ node + กองไพ่กลาง — จำกัดเฉพาะจอกว้าง (min-width:769)
+   เพื่อไม่ให้ไปทับกฎมือถือ (โทรศัพท์แนวตั้งสูง <820 ก็จะเข้าเงื่อนไขนี้โดยไม่ตั้งใจ) */
+@media (max-height: 820px) and (min-width: 769px) {
   .player-node { --pw: clamp(44px, 8.2vh, 70px); gap: 2px; }
   .hp-hearts { gap: 1px; }
   .player-node-name { font-size: 0.66rem; }
