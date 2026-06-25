@@ -342,8 +342,9 @@ class Room {
         // ระยะจากผู้เล่นที่กำลังดู และอยู่ในระยะโจมตีหรือไม่
         distance: g && me && me.hp > 0 && p.hp > 0 && p.id !== forPlayerId ? g.distance(me, p) : null,
         inAttackRange: g && me && me.hp > 0 && p.hp > 0 && p.id !== forPlayerId ? g.inAttackRange(me, p) : false,
-        // เปิดเผยบทบาท: ตัวเอง / จบเกม / จักรพรรดิ / ผู้เล่นที่ตายแล้ว (เปิดการ์ดโรลเมื่อตาย)
-        role: (p.id === forPlayerId || this.state === 'ended' || p.hp <= 0 || p.dead)
+        // เปิดเผยบทบาท: ตัวเอง / จบเกม / จักรพรรดิ / ผู้เล่นที่ "ตายแล้ว" ระหว่างเกมเท่านั้น
+        //   (ห้ามใช้ hp<=0 เพราะช่วงสุ่มโรล/เลือกตัวละคร ทุกคน hp=0 จะเผยหมด)
+        role: (p.id === forPlayerId || this.state === 'ended' || (this.state === 'playing' && p.dead))
           ? p.role : (p.role === 'Lord' ? 'Lord' : '?'),
       };
       }),
@@ -511,6 +512,7 @@ class Game {
       // จักรพรรดิได้พลังชีวิตเพิ่ม 1 หน่วย ยกเว้นเล่น 2 คน (ตามคู่มือ)
       p.maxHp = (char?.hp || 4) + (p.role === 'Lord' && n > 2 ? 1 : 0);
       p.hp = p.maxHp;
+      p.dead = false;              // รีเซ็ตสถานะตาย (กันค้างเมื่อเล่นเกมใหม่ในห้องเดิม)
       p.hand = this.drawCards(4);  // แจกการ์ดเริ่มต้น คนละ 4 ใบ
       p.equipment = { weapon: null, armor: null, atkMount: null, defMount: null };
       p.judgments = [];            // ช่องตัดสิน (การ์ดหน่วงเวลา: สายฟ้า/เสพสุข)
