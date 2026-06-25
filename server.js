@@ -508,6 +508,7 @@ class Game {
     this.harvestTimer = null;
     this.rockAxe = null;           // { sourceId, responderId, damage, color, card } — ขวานผ่าหิน (贯石斧)
     this.rockAxeTimer = null;
+    this.halberPending = null;     // { from, target, dmg, color, dodgesNeeded, card, extraPool, timer } — ง้าวฟ้า
     this.log = [];
     this.timer = null;
     this.timerInterval = null;
@@ -1498,14 +1499,23 @@ class Game {
         this.addLog(from.username, `🐎 [ทแกล้วทหารม้า/铁骑] เปิด ${tag}(ดำ) — หลบได้ตามปกติ`);
       }
     }
-    // ง้าวฟ้า (方天画戟): โจมตีเป็นไพ่ใบสุดท้ายในมือ → กระทบเป้าหมายอื่นในระยะเพิ่มได้ถึง 2
+    // ง้าวฟ้า (方天画戟): โจมตีเป็นไพ่ใบสุดท้ายในมือ → ผู้โจมตีเลือกเป้าหมายเพิ่มได้ (0–2 คน)
     if (from.equipment?.weapon?.name === 'Sky Piercing Halberd' && from.hand.length <= 1) {
-      const extra = this.room.players.filter(p => p.hp > 0 && p.id !== from.id
+      const extraPool = this.room.players.filter(p => p.hp > 0 && p.id !== from.id
         && p.id !== target.id && this.inAttackRange(from, p)).slice(0, 2);
-      if (extra.length) {
-        this.addLog(from.username, `🩸 [ง้าวฟ้า/方天画戟] โจมตีไพ่ใบสุดท้าย — กระทบ ${extra.length + 1} เป้าหมาย!`);
-        this.requestGroupResponse('dodge', [target, ...extra], from, 'Attack',
-          { damage: dmg, attackCardColor: color, dodgesNeeded, card: srcCard });
+      if (extraPool.length) {
+        // เก็บสถานะรอการเลือก (ถ้า timer หมด จะโจมตีเฉพาะเป้าหมายหลัก)
+        this.halberPending = { from, target, dmg, color, dodgesNeeded, card: srcCard, extraPool, timer: null };
+        const sock = io.sockets.sockets.get(from.socketId);
+        if (sock) sock.emit('askHalberd', {
+          targetName: target.username,
+          extra: extraPool.map(p => ({ id: p.id, name: p.username, hp: p.hp })),
+        });
+        // หมดเวลา 12 วินาที → โจมตีเฉพาะเป้าหลัก
+        this.halberPending.timer = setTimeout(() => {
+          if (this.halberPending) this.resolveHalberd(from.id, []);
+        }, 12000);
+        this.broadcast();
         return;
       }
     }
@@ -2528,6 +2538,26 @@ class Game {
     this.finishTurn();
   }
 
+  // ง้าวฟ้า: ผู้โจมตีเลือกเป้าหมายเพิ่ม (chosenIds = [] คือไม่เลือกเพิ่ม)
+  resolveHalberd(playerId, chosenIds) {
+    const h = this.halberPending;
+    if (!h || h.from.id !== playerId) return { ok: false, msg: 'ไม่มีคำของ้าวฟ้า' };
+    clearTimeout(h.timer);
+    this.halberPending = null;
+    const chosen = (chosenIds || []).map(id => h.extraPool.find(p => p.id === id)).filter(Boolean).slice(0, 2);
+    const targets = [h.target, ...chosen];
+    if (chosen.length) {
+      this.addLog(h.from.username, `🩸 [ง้าวฟ้า/方天画戟] เลือกโจมตีเพิ่ม ${chosen.map(p => p.username).join(', ')} — รวม ${targets.length} เป้าหมาย`);
+      this.requestGroupResponse('dodge', targets, h.from, 'Attack',
+        { damage: h.dmg, attackCardColor: h.color, dodgesNeeded: h.dodgesNeeded, card: h.card });
+    } else {
+      this.addLog(h.from.username, `🩸 [ง้าวฟ้า/方天画戟] ไม่เลือกเป้าหมายเพิ่ม`);
+      this.requestResponse('dodge', h.target, h.from, 'Attack',
+        { damage: h.dmg, attackCardColor: h.color, dodgesNeeded: h.dodgesNeeded, card: h.card });
+    }
+    return { ok: true };
+  }
+
   // เฟสสิ้นสุด + ส่งตาให้ผู้เล่นคนถัดไปที่ยังมีชีวิต
   finishTurn() {
     const players = this.room.players;
@@ -3011,6 +3041,15 @@ io.on('connection', (socket) => {
     const room = rooms.get(info.roomCode);
     if (!room || !room.game) return;
     room.game.endTurn(info.playerId);
+  });
+
+  socket.on('halberdChoose', ({ chosenIds }) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    const result = room.game.resolveHalberd(info.playerId, chosenIds || []);
+    if (result && !result.ok) socket.emit('error', result.msg);
   });
 
   // ผู้เล่นเลือกการ์ดที่จะทิ้งเองตอนจบตา (เกินลิมิตมือ)

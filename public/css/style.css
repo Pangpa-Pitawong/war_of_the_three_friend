@@ -900,6 +900,7 @@ html, body {
 .sidebar-content { flex: 1; overflow-y: auto; padding: 8px; }
 .sidebar-section { display: none; }
 .sidebar-section.active { display: block; }
+#sidebar-chat.active { display: flex; flex-direction: column; height: 100%; }
 
 .log-entry {
   padding: 4px 8px;

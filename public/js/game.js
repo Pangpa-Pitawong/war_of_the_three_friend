@@ -196,11 +196,17 @@ socket.on('roomCreated', ({ roomCode, playerId }) => {
 socket.on('joinedRoom', ({ playerId }) => {
   STATE.playerId = playerId;
   localStorage.setItem('wtk_pid', playerId);
-  showScreen('lobby');
+  // Screen will be set by subsequent roomUpdate (handles reconnect-during-game)
 });
 
 socket.on('roomUpdate', (room) => {
   STATE.room = room;
+  // Reconnect during game: route to game screen
+  if (room.state === 'playing') {
+    if (STATE.currentScreen !== 'game') showScreen('game');
+    renderGame();
+    return;
+  }
   // เปิดการ์ดบทบาท (Roll) ก่อนเข้าสู่การเลือกตัวละคร
   if (room.state === 'rolling') {
     if (STATE.currentScreen !== 'roll') showScreen('roll');
@@ -216,8 +222,8 @@ socket.on('roomUpdate', (room) => {
     renderDraft();
     return;
   }
+  if (STATE.currentScreen !== 'game' && STATE.currentScreen !== 'win') showScreen('lobby');
   if (STATE.currentScreen === 'lobby') renderLobby();
-  if (STATE.currentScreen === 'game') renderGame();
   if (STATE.currentScreen === 'charselect') renderCharSelect();
 });
 
@@ -230,10 +236,15 @@ socket.on('gameStarted', (room) => {
 });
 
 socket.on('gameEnded', ({ winner, msg }) => {
-  notify(msg, 'success', 8000);
-  document.getElementById('win-msg').textContent = msg;
-  document.getElementById('win-winner').textContent = winner;
-  showScreen('win');
+  STATE.gameOver = { winner, msg };
+  // Stay on game screen, show result overlay
+  if (STATE.currentScreen === 'game') {
+    showGameOverOverlay(winner, msg);
+  } else {
+    showScreen('win');
+    document.getElementById('win-msg').textContent = msg;
+    document.getElementById('win-winner').textContent = winner;
+  }
 });
 
 socket.on('playerJoined', ({ username }) => {
@@ -349,6 +360,11 @@ socket.on('askYiji', ({ cards, players }) => {
   openYijiModal(cards || [], players || []);
 });
 
+// ง้าวฟ้า (方天画戟): เลือกเป้าหมายเพิ่ม 0–2 คน
+socket.on('askHalberd', ({ targetName, extra }) => {
+  openHalberdModal(targetName, extra);
+});
+
 socket.on('error', (msg) => notify(msg, 'error'));
 socket.on('kicked', ({ reason }) => {
   notify(reason, 'error', 5000);
@@ -406,7 +422,19 @@ function renderLobby() {
 
       // Host can kick others
       if (room.hostId === STATE.playerId && p.id !== STATE.playerId) {
-        slot.title = 'คลิกเพื่อดูตัวเลือก';
+        const kickBtn = document.createElement('button');
+        kickBtn.className = 'btn btn-cancel';
+        kickBtn.style.cssText = 'padding:2px 8px;font-size:0.7rem;position:absolute;top:4px;right:4px;z-index:2';
+        kickBtn.textContent = '⛔ เตะ';
+        kickBtn.title = `เตะ ${p.username} ออกจากห้อง`;
+        kickBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openPlayConfirm(`เตะ ${p.username} ออกจากห้อง?`, () => {
+            socket.emit('kickPlayer', { targetId: p.id });
+          }, null);
+        });
+        slot.style.position = 'relative';
+        slot.appendChild(kickBtn);
       }
     }
     grid.appendChild(slot);
@@ -556,6 +584,22 @@ function renderDraft() {
   document.getElementById('draft-status').textContent = status;
 
   if (STATE.draftSelected) fillDraftPreview(STATE.draftSelected);
+
+  // แสดงตำแหน่งที่นั่งและเพื่อนบ้าน
+  const myIdx = room.players.findIndex(p => p.id === STATE.playerId);
+  const n = room.players.length;
+  let seatEl = document.getElementById('draft-seat-info');
+  if (!seatEl) {
+    seatEl = document.createElement('div');
+    seatEl.id = 'draft-seat-info';
+    seatEl.style.cssText = 'text-align:center;color:var(--text-dim);font-size:0.78rem;margin-top:8px';
+    document.getElementById('draft-title').parentElement?.appendChild(seatEl);
+  }
+  if (myIdx >= 0 && n > 1) {
+    const leftName = room.players[(myIdx - 1 + n) % n].username;
+    const rightName = room.players[(myIdx + 1) % n].username;
+    seatEl.textContent = `🪑 ที่นั่งลำดับที่ ${myIdx + 1} — ซ้าย: ${leftName} | ขวา: ${rightName}`;
+  }
 }
 
 function renderDraftCard(grid, id, locked) {
@@ -650,7 +694,19 @@ function renderRoll() {
     </div>`;
   }).join('');
 
-  document.getElementById('roll-countdown').textContent = 'กำลังเข้าสู่การเลือกตัวละคร...';
+  // แสดงตำแหน่งที่นั่งของผู้เล่นและเพื่อนบ้าน
+  const myIdx = room.players.findIndex(p => p.id === STATE.playerId);
+  const n = room.players.length;
+  if (myIdx >= 0 && n > 1) {
+    const leftIdx = (myIdx - 1 + n) % n;
+    const rightIdx = (myIdx + 1) % n;
+    const leftName = room.players[leftIdx].username;
+    const rightName = room.players[rightIdx].username;
+    document.getElementById('roll-countdown').textContent =
+      `ที่นั่งของคุณ: ลำดับที่ ${myIdx + 1} — ซ้าย: ${leftName} | ขวา: ${rightName}`;
+  } else {
+    document.getElementById('roll-countdown').textContent = 'กำลังเข้าสู่การเลือกตัวละคร...';
+  }
 }
 
 // ─── การ์ดอุปกรณ์ที่ติดตั้งหน้าผู้เล่น (ทุกคนมองเห็น) ─────────────────────────────
@@ -1178,10 +1234,20 @@ function beginCardPlay(card, me2, asName, forceTarget) {
     notify(isGuanyuRedCard ? `[กวนอู] เลือกเป้าหมายโจมตี (${card.name})` : 'เลือกเป้าหมาย...', 'info', 2000);
     renderGame();
   } else {
-    STATE.selectingTarget = false;
-    socket.emit('playCard', { cardId: card.id, targetId: null, asName: STATE.playAs });
-    STATE.selectedCard = null; STATE.playAs = null;
-    renderGame();
+    // Confirm before playing a no-target card
+    const cd = window.CARD_DATA[card.name];
+    const cardTh = cd?.nameTh || card.name;
+    const playAsName = asName ? (window.CARD_DATA[asName]?.nameTh || asName) : null;
+    const displayName = playAsName ? `${cardTh} → ${playAsName}` : cardTh;
+    openPlayConfirm(`เล่น [${displayName}]?`, () => {
+      STATE.selectingTarget = false;
+      socket.emit('playCard', { cardId: card.id, targetId: null, asName: STATE.playAs });
+      STATE.selectedCard = null; STATE.playAs = null;
+      renderGame();
+    }, () => {
+      STATE.selectedCard = null; STATE.playAs = null; STATE.selectingTarget = false;
+      renderGame();
+    });
   }
 }
 
@@ -1195,11 +1261,20 @@ function confirmPlayCard(targetId) {
     renderGame();
     return;
   }
-  socket.emit('playCard', { cardId: card.id, targetId, asName: STATE.playAs || null });
-  STATE.selectedCard = null;
-  STATE.playAs = null;
-  STATE.selectingTarget = false;
-  renderGame();
+  const target = STATE.room?.players.find(p => p.id === targetId);
+  const cd = window.CARD_DATA[card.name];
+  const cardTh = cd?.nameTh || card.name;
+  const playAsName = STATE.playAs ? (window.CARD_DATA[STATE.playAs]?.nameTh || STATE.playAs) : null;
+  const displayName = playAsName ? `${cardTh} → ${playAsName}` : cardTh;
+  openPlayConfirm(`เล่น [${displayName}] ใส่ ${target?.username || '?'}?`, () => {
+    socket.emit('playCard', { cardId: card.id, targetId, asName: STATE.playAs || null });
+    STATE.selectedCard = null;
+    STATE.playAs = null;
+    STATE.selectingTarget = false;
+    renderGame();
+  }, () => {
+    // Cancel: stay in target-selection mode (don't deselect card)
+  });
 }
 
 // ─── Response Modal (ตอบโต้) ─────────────────────────────────────────────────
@@ -1867,6 +1942,94 @@ function openSkillModal() {
   });
 }
 
+// ─── ง้าวฟ้า (方天画戟) — เลือกเป้าหมายเพิ่ม 0–2 คน ─────────────────────────────
+function openHalberdModal(targetName, extra) {
+  const overlay = document.getElementById('modal-skill');
+  if (!overlay) return;
+  const chosen = new Set();
+  const render = () => {
+    overlay.innerHTML = `<div class="modal gold-frame" style="width:420px;max-width:92vw;text-align:center">
+      <h2 style="margin:0 0 8px;font-size:1.05rem;color:#e8a85c">🗡️ ง้าวฟ้า (方天画戟)</h2>
+      <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:6px">
+        โจมตีไพ่ใบสุดท้าย — เลือกเป้าหมายเพิ่มได้สูงสุด 2 คน (ไม่บังคับ)<br>
+        เป้าหลัก: <b>${targetName}</b> ${chosen.size ? `+ ที่เลือก: ${chosen.size} คน` : ''}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+        ${extra.map(p => `<button class="btn ${chosen.has(p.id) ? 'btn-confirm' : ''} hb-opt" data-id="${p.id}" style="width:100%">
+          ${chosen.has(p.id) ? '✓ ' : ''}${p.name} ❤️${p.hp}
+        </button>`).join('')}
+      </div>
+      <button class="btn btn-confirm" id="hb-ok" style="width:100%;margin-bottom:8px">⚔️ ยืนยัน (${chosen.size > 0 ? `โจมตีรวม ${chosen.size + 1} คน` : 'โจมตีเฉพาะเป้าหลัก'})</button>
+      <button class="btn btn-cancel" id="hb-skip" style="width:100%">ข้ามเอฟเฟคง้าวฟ้า</button>
+    </div>`;
+    overlay.classList.add('active');
+    overlay.querySelectorAll('.hb-opt').forEach(el => el.addEventListener('click', () => {
+      const id = el.dataset.id;
+      if (chosen.has(id)) chosen.delete(id);
+      else if (chosen.size < 2) chosen.add(id);
+      else notify('เลือกได้สูงสุด 2 คน', 'error');
+      render();
+    }));
+    document.getElementById('hb-ok').addEventListener('click', () => {
+      socket.emit('halberdChoose', { chosenIds: [...chosen] });
+      overlay.classList.remove('active');
+    });
+    document.getElementById('hb-skip').addEventListener('click', () => {
+      socket.emit('halberdChoose', { chosenIds: [] });
+      overlay.classList.remove('active');
+    });
+  };
+  render();
+}
+
+// ─── Confirm Modal (ยืนยันก่อนเล่นการ์ด/จบตา) ────────────────────────────────
+function openPlayConfirm(label, onConfirm, onCancel) {
+  const overlay = document.getElementById('modal-skill');
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:320px;max-width:92vw;text-align:center">
+    <div style="font-size:1rem;color:var(--text);margin-bottom:18px;line-height:1.5">${label}</div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-confirm" id="pc-yes" style="flex:1">✓ ยืนยัน</button>
+      <button class="btn btn-cancel" id="pc-no" style="flex:1">✕ ยกเลิก</button>
+    </div>
+  </div>`;
+  overlay.classList.add('active');
+  document.getElementById('pc-yes').addEventListener('click', () => {
+    overlay.classList.remove('active');
+    if (onConfirm) onConfirm();
+  });
+  document.getElementById('pc-no').addEventListener('click', () => {
+    overlay.classList.remove('active');
+    if (onCancel) onCancel();
+  });
+}
+
+// ─── Game Over Overlay (แสดงผลชนะบนหน้าเกม ไม่เปลี่ยนหน้า) ─────────────────────
+function showGameOverOverlay(winner, msg) {
+  let overlay = document.getElementById('gameover-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'gameover-overlay';
+    overlay.style.cssText = `
+      position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,0,0.75);pointer-events:all;
+    `;
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `<div class="modal gold-frame" style="width:min(480px,92vw);text-align:center;padding:32px 24px">
+    <div style="font-size:2.2rem;margin-bottom:8px">🏆</div>
+    <h2 style="color:var(--gold);font-size:1.4rem;margin:0 0 8px">${escHtml(winner)}</h2>
+    <div style="color:var(--text);font-size:0.95rem;margin-bottom:24px;line-height:1.6">${escHtml(msg)}</div>
+    <button class="btn btn-confirm" id="go-leave" style="width:100%;font-size:1rem">🚪 ออกจากเกม</button>
+  </div>`;
+  document.getElementById('go-leave').addEventListener('click', () => {
+    overlay.remove();
+    socket.emit('leaveRoom');
+    STATE.playerId = null; STATE.roomCode = null; STATE.room = null; STATE.gameOver = null;
+    localStorage.removeItem('wtk_pid'); localStorage.removeItem('wtk_room');
+    showScreen('menu');
+  });
+}
+
 // ─── Chat ────────────────────────────────────────────────────────────────
 function addChatMessage(from, message, isSystem) {
   const selectors = ['#chat-messages-lobby', '#chat-messages-game'];
@@ -1890,8 +2053,8 @@ function sendChat(inputId) {
   const msg = input.value.trim();
   if (!msg) return;
   socket.emit('sendChat', { message: msg });
-  addChatMessage(STATE.username, msg, false);
   input.value = '';
+  // Server will broadcast chatMessage back to all (including sender), so don't add locally
 }
 
 // ─── Sidebar Tabs ────────────────────────────────────────────────────────
@@ -2078,9 +2241,11 @@ document.querySelectorAll('.char-tab').forEach(tab => {
 
 // ─── Game Actions ─────────────────────────────────────────────────────────
 document.getElementById('btn-end-turn').addEventListener('click', () => {
-  socket.emit('endTurn');
-  STATE.selectedCard = null;
-  STATE.selectingTarget = false;
+  openPlayConfirm('จบตาและส่งให้ผู้เล่นถัดไป?', () => {
+    socket.emit('endTurn');
+    STATE.selectedCard = null;
+    STATE.selectingTarget = false;
+  }, null);
 });
 
 document.getElementById('btn-cancel-target').addEventListener('click', () => {
@@ -2444,7 +2609,10 @@ document.querySelectorAll('[data-close-modal]').forEach(btn => {
 });
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.classList.remove('active');
+    if (e.target !== overlay) return;
+    // Do not close modal-response if awaiting mandatory player input
+    if (overlay.id === 'modal-response' && (STATE._discardOpen || STATE._peachOpen || STATE._harvestOpen)) return;
+    overlay.classList.remove('active');
   });
 });
 
