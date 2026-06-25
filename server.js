@@ -447,12 +447,21 @@ class Room {
       d.picks[playerId] = charId;
       d.revealed.push(playerId);
       // เอาการ์ดที่จักรพรรดิไม่เลือก (6 ใบ) กลับเข้ากองแล้วสับ
+      // (จักรพรรดิยังคงได้เลือกจาก 3 ตัวสกิลจักรพรรดิ + สุ่ม 4 เหมือนเดิม — ส่วนนี้ไม่กระทบ)
       d.pool.push(...cands.filter(id => id !== charId));
       d.pool = shuffleDeck(d.pool);
-      // แจกผู้เล่นที่เหลือคนละ 5 ใบ (ปรับลดถ้ากองไม่พอ)
+      // ── เช็คจำนวนผู้เล่นเทียบกองตัวละครที่เหลือ แล้วปรับจำนวนต่อคนให้แจกได้ครบทุกคน ──
       const others = this.players.filter(p => p.role !== 'Lord');
-      const per = Math.min(5, Math.max(1, Math.floor(d.pool.length / Math.max(1, others.length))));
-      others.forEach(p => { d.candidates[p.id] = d.pool.splice(0, per); });
+      const nOthers = others.length;
+      const DEFAULT_PER = 5;   // ค่าตั้งต้น: คนละ 5 ตัวให้เลือก
+      // จำนวนต่อคนที่มากที่สุด (≤5) ที่ยังแจกได้ครบและเท่ากันทุกคนจากกองที่เหลือ
+      let per = Math.min(DEFAULT_PER, Math.floor(d.pool.length / Math.max(1, nOthers)));
+      if (per < 1) per = 1;   // กรณีกองน้อยกว่าจำนวนคน (ไม่ควรเกิดกับโรสเตอร์ปกติ) — แจกเท่าที่กองมี
+      if (per < DEFAULT_PER) {
+        this.addLog('ระบบ', `🎴 ตัวละครในกองเหลือ ${d.pool.length} ตัวสำหรับผู้เล่น ${nOthers} คน — ปรับการแจกเป็นคนละ ${per} ตัว`);
+      }
+      // splice ไม่เกินจำนวนที่กองมีจริง → ไม่มีใครได้มือว่าง (กัน over-deal)
+      others.forEach(p => { d.candidates[p.id] = d.pool.splice(0, Math.min(per, d.pool.length)); });
       d.stage = 'others';
       if (others.length === 0) this.finishDraft();
       return { ok: true };
