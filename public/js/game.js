@@ -1554,55 +1554,62 @@ function openTakeCardModal(mode, targetName, options) {
   }));
 }
 
-// การ์ดย่อ (ใช้ในหน้าต่างดูดาว/มรดก) — แสดงชื่อ + เลข/ดอก
+// การ์ดย่อ (ใช้ในหน้าต่างมรดก) — แสดงชื่อ + เลข/ดอก
 function miniCardLabel(c) {
   const red = c.color === 'red' || c.suit === '♥' || c.suit === '♦';
   const cd = window.CARD_DATA[c.name];
   return `${cd?.nameTh || c.name} <b style="color:${red ? '#c0392b' : '#cdd6e0'}">${c.rank || ''}${c.suit || ''}</b>`;
 }
 
-// ─── ดูดาว (观星) — จัดลำดับไพ่บนสุด: บนกอง (จั่วก่อน) / ก้นกอง ─────────────────────
+// ─── ดูดาว (观星) — UI แบบเก็บเกี่ยวอุดมสมบูรณ์ แต่ติ๊กเลือกไพ่เป็นลำดับ ─────────────
+// ติ๊กไพ่ตามลำดับที่จะวาง "บนกอง" (ใบแรกที่ติ๊ก = จั่วก่อน) · ไพ่ที่ไม่ติ๊กจะลงก้นกอง
 function openGuanxingModal(cards) {
   const overlay = document.getElementById('modal-skill');
   if (!overlay) return;
-  let top = cards.map(c => c.id);   // เริ่มต้น: ทั้งหมดอยู่บนกองตามลำดับเดิม
-  let bottom = [];
+  let order = [];   // ids ที่ติ๊กแล้ว ตามลำดับ — บนกอง: order[0] = จั่วใบแรก
   const byId = Object.fromEntries(cards.map(c => [c.id, c]));
-  const row = (c, where, i, n) => `
-    <div style="display:flex;align-items:center;gap:6px;background:rgba(0,0,0,0.25);border:1px solid rgba(210,168,232,0.25);border-radius:8px;padding:6px 8px;margin-bottom:5px">
-      <span style="flex:1;font-size:0.85rem">${miniCardLabel(c)}</span>
-      ${where === 'top' ? `
-        <button class="btn gx-up" data-id="${c.id}" ${i === 0 ? 'disabled' : ''} style="padding:2px 8px">▲</button>
-        <button class="btn gx-down" data-id="${c.id}" ${i === n - 1 ? 'disabled' : ''} style="padding:2px 8px">▼</button>
-        <button class="btn btn-cancel gx-tobottom" data-id="${c.id}" style="padding:2px 8px">⬇ ก้นกอง</button>`
-      : `<button class="btn btn-confirm gx-totop" data-id="${c.id}" style="padding:2px 8px">⬆ บนกอง</button>`}
+
+  function cardHTML(c) {
+    const cd = window.CARD_DATA[c.name];
+    const pos = order.indexOf(c.id);
+    const selected = pos >= 0;
+    const badge = selected
+      ? `<div style="position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#27ae60;color:#fff;font-size:0.82rem;font-weight:700;display:flex;align-items:center;justify-content:center;z-index:3;box-shadow:0 0 6px rgba(0,0,0,0.7)">${pos + 1}</div>`
+      : `<div style="position:absolute;top:3px;left:3px;font-size:0.6rem;color:#e0a0a0;background:rgba(0,0,0,0.65);padding:1px 4px;border-radius:4px;z-index:3">ก้นกอง</div>`;
+    const sel = selected ? 'border-color:#27ae60;box-shadow:0 0 12px rgba(39,174,96,0.7);transform:translateY(-6px)' : '';
+    return `<div class="resp-card" data-cardid="${c.id}" style="${sel}">
+      <img src="${cd?.image || ''}" onerror="this.style.display='none'">
+      ${suitPip(c)}
+      ${badge}
     </div>`;
+  }
+
   function render() {
-    overlay.innerHTML = `<div class="modal gold-frame" style="width:480px;max-width:94vw">
-      <h2 style="margin:0 0 6px;font-size:1.05rem;color:#d2a8e8">🔭 ดูดาว (观星)</h2>
-      <div style="color:var(--text-dim);font-size:0.8rem;margin-bottom:10px">จัดลำดับไพ่: <b>บนกอง</b> จั่วก่อน (บนสุด = จั่วใบแรก) · <b>ก้นกอง</b> ไว้ล่างสุด</div>
-      <div style="font-size:0.78rem;color:#9fd6a0;margin:4px 0">🔼 บนกอง (จั่วก่อน)</div>
-      <div id="gx-top">${top.map((id, i) => row(byId[id], 'top', i, top.length)).join('') || '<div style="color:var(--text-dim);font-size:0.8rem">— ไม่มี —</div>'}</div>
-      <div style="font-size:0.78rem;color:#e0a0a0;margin:8px 0 4px">🔽 ก้นกอง (จั่วท้ายสุด)</div>
-      <div id="gx-bottom">${bottom.map(id => row(byId[id], 'bottom')).join('') || '<div style="color:var(--text-dim);font-size:0.8rem">— ไม่มี —</div>'}</div>
-      <button class="btn btn-confirm" id="gx-confirm" style="width:100%;margin-top:12px">ยืนยันการจัดเรียง</button></div>`;
+    overlay.innerHTML = `
+      <div class="modal gold-frame" style="width:min(560px,94vw)">
+        <h2 style="color:#d2a8e8">🔭 ดูดาว (观星)</h2>
+        <div style="text-align:center;color:var(--text);margin-bottom:6px;line-height:1.6">
+          ติ๊กเลือกไพ่ <b>ตามลำดับที่จะวางบนกอง</b> (ใบแรก = จั่วก่อน)<br>
+          ไพ่ที่ไม่เลือกจะถูกวางไว้ <b>ก้นกอง</b>
+        </div>
+        <div style="color:var(--text-dim);font-size:0.78rem;text-align:center;margin-bottom:10px">คลิกซ้ำเพื่อยกเลิกการเลือก · บนกอง ${order.length} ใบ · ก้นกอง ${cards.length - order.length} ใบ</div>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:12px" id="gx-cards">${cards.map(cardHTML).join('')}</div>
+        <button class="btn btn-confirm" id="gx-confirm" style="width:100%">ยืนยันการจัดเรียง</button>
+      </div>`;
     overlay.classList.add('active');
-    overlay.querySelectorAll('.gx-tobottom').forEach(el => el.addEventListener('click', () => {
-      const id = el.dataset.id; top = top.filter(x => x !== id); bottom.push(id); render();
-    }));
-    overlay.querySelectorAll('.gx-totop').forEach(el => el.addEventListener('click', () => {
-      const id = el.dataset.id; bottom = bottom.filter(x => x !== id); top.push(id); render();
-    }));
-    overlay.querySelectorAll('.gx-up').forEach(el => el.addEventListener('click', () => {
-      const id = el.dataset.id; const i = top.indexOf(id);
-      if (i > 0) { [top[i - 1], top[i]] = [top[i], top[i - 1]]; render(); }
-    }));
-    overlay.querySelectorAll('.gx-down').forEach(el => el.addEventListener('click', () => {
-      const id = el.dataset.id; const i = top.indexOf(id);
-      if (i < top.length - 1) { [top[i + 1], top[i]] = [top[i], top[i + 1]]; render(); }
-    }));
+    overlay.querySelectorAll('.resp-card').forEach(el => {
+      const c = byId[el.dataset.cardid];
+      if (c) addTooltipHover(el, () => cardTooltipHTML(c.name));
+      el.addEventListener('click', () => {
+        const id = el.dataset.cardid;
+        const i = order.indexOf(id);
+        if (i >= 0) order.splice(i, 1); else order.push(id);
+        render();
+      });
+    });
     document.getElementById('gx-confirm').addEventListener('click', () => {
-      socket.emit('guanxingArrange', { top, bottom });
+      const bottom = cards.map(c => c.id).filter(id => !order.includes(id));
+      socket.emit('guanxingArrange', { top: order.slice(), bottom });
       overlay.classList.remove('active');
     });
   }
