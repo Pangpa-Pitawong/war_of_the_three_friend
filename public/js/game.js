@@ -2185,6 +2185,249 @@ document.querySelectorAll('.encyc-tab').forEach(tab => {
   tab.addEventListener('click', () => renderEncyclopedia(tab.dataset.encyc));
 });
 
+// ─── Guide / Rulebook (คู่มือการเล่นและกฎกติกา) ────────────────────────────
+function openGuide(tab = 'start') {
+  document.getElementById('modal-guide').classList.add('active');
+  renderGuide(tab);
+}
+['btn-guide', 'btn-guide-lobby', 'btn-guide-game'].forEach(id => {
+  document.getElementById(id)?.addEventListener('click', () => openGuide('start'));
+});
+document.querySelectorAll('.guide-tab').forEach(tab => {
+  tab.addEventListener('click', () => renderGuide(tab.dataset.guide));
+});
+
+function renderGuide(tab) {
+  const content = document.getElementById('guide-content');
+  document.querySelectorAll('.guide-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`[data-guide="${tab}"]`)?.classList.add('active');
+  content.scrollTop = 0;
+
+  const cardImg = (key, fallback) =>
+    (window.CARD_DATA && window.CARD_DATA[key] && window.CARD_DATA[key].image) || fallback;
+
+  if (tab === 'start') {
+    content.innerHTML = `
+      <h3>🚀 เริ่มเล่นใน 5 ขั้นตอน</h3>
+      <p class="dim">สงครามสามก๊กเพื่อนซี้ เป็นเกมไพ่สวมบทบาท เล่น 2–10 คน ทุกคนได้รับ
+      <b>บทบาทลับ</b> และ <b>ขุนพล</b> 1 คน เป้าหมายขึ้นกับบทบาทที่จับได้ —
+      เอาชนะด้วยการเล่นไพ่โจมตี ป้องกัน และวางแผนให้ฝ่ายตัวเองชนะ</p>
+
+      <div class="guide-steps">
+        <div class="guide-step"><div class="num">1</div><div class="body"><b>เข้าห้อง</b> — กด <b>⚔️ เล่นออนไลน์</b> ใส่รหัสห้องจากเพื่อน หรือ <b>🏠 สร้างห้อง</b> เองแล้วแชร์รหัส (เช่น <b>WTK-A1B2C3</b>) ให้เพื่อน</div></div>
+        <div class="guide-step"><div class="num">2</div><div class="body"><b>กดพร้อม</b> — ในหน้า Lobby กด <b>✓ พร้อมแล้ว</b> เมื่อทุกคนพร้อม เจ้าของห้องกด <b>▶ เริ่มเกม</b></div></div>
+        <div class="guide-step"><div class="num">3</div><div class="body"><b>รับบทบาท</b> — เปิดการ์ดบทบาทลับ (จักรพรรดิ/ผู้ภักดี/กบฎ/ทรยศ) เฉพาะ <b>จักรพรรดิ</b> เปิดเผยตัว คนอื่นปิดไว้</div></div>
+        <div class="guide-step"><div class="num">4</div><div class="body"><b>เลือกขุนพล</b> — เลือกตัวละครจากการ์ดในมือ แต่ละคนมี <b>ทักษะพิเศษ</b> และพลังชีวิต (❤️) ต่างกัน</div></div>
+        <div class="guide-step"><div class="num">5</div><div class="body"><b>ลงสนาม</b> — ผลัดกันเล่นทีละตา จั่วไพ่ → ใช้ไพ่โจมตี/ป้องกัน/อุปกรณ์ → จบตา จนกว่าจะมีฝ่ายชนะ</div></div>
+      </div>
+
+      <h4>🗺️ หน้าตากระดานเกม</h4>
+      <div class="mini-board">
+        <div class="mb-tag" style="top:8px;left:50%;transform:translateX(-50%)">🔺 ผู้เล่นคนอื่นเรียงรอบวง</div>
+        <div class="mb-tag" style="top:50%;left:50%;transform:translate(-50%,-50%)">🂠 กองไพ่ · ♻️ กองทิ้ง · ⏱️ ตัวจับเวลา</div>
+        <div class="mb-tag" style="bottom:8px;left:14px">🃏 ไพ่ในมือคุณ</div>
+        <div class="mb-tag" style="bottom:8px;right:14px">📋 บันทึก / แชท / ผู้เล่น</div>
+        <div class="mb-tag" style="top:8px;right:14px">📘 ปุ่มคู่มือ</div>
+      </div>
+      <div class="guide-note">💡 อ่านรายละเอียดแต่ละแท็บด้านบน: <b>บทบาท</b> เพื่อรู้เป้าหมายชนะ · <b>ลำดับเทิร์น</b> เพื่อรู้ว่าแต่ละตาทำอะไร · <b>ปุ่มในเกม</b> เพื่อรู้ว่าปุ่มไหนทำอะไร</div>
+    `;
+
+  } else if (tab === 'roles') {
+    const roles = window.ROLE_DATA || {};
+    const order = ['Lord', 'Loyalist', 'Rebel', 'Spy'];
+    content.innerHTML = `
+      <h3>🎭 บทบาทและเงื่อนไขชนะ</h3>
+      <p class="dim">ตอนเริ่มเกมทุกคนจับ <b>บทบาทลับ</b> 1 ใบ บทบาทกำหนดว่า "คุณชนะเมื่อไหร่"
+      มีเฉพาะ <b>จักรพรรดิ</b> ที่เปิดเผยตัวตั้งแต่ต้น ที่เหลือต้องเดากันเอาเองจากการเล่น</p>
+      <div class="guide-grid">
+        ${order.filter(k => roles[k]).map(k => {
+          const r = roles[k];
+          return `
+          <div class="guide-card" style="border-color:${r.color}66">
+            <div class="gc-title"><img src="${r.image}" onerror="this.style.display='none'" style="width:30px;height:42px;object-fit:cover;border-radius:4px;border:1px solid ${r.color}"> <span style="color:${r.color}">${r.nameTh}</span></div>
+            <div class="gc-body">${r.desc}</div>
+            <div class="gc-goal">🎯 <b>เป้าหมาย:</b> ${r.goal}</div>
+            <div class="gc-goal">💡 ${r.tips}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="guide-note warn">⚔️ <b>ระวัง:</b> นอกจากจักรพรรดิแล้ว ไม่มีใครรู้บทบาทของคนอื่น — โจมตีผิดคนอาจช่วยศัตรูได้! สังเกตจากการกระทำว่าใครน่าจะอยู่ฝ่ายไหน</div>
+    `;
+
+  } else if (tab === 'turn') {
+    content.innerHTML = `
+      <h3>🔄 ลำดับขั้นในหนึ่งเทิร์น</h3>
+      <p class="dim">เมื่อถึงตาคุณ จะไล่ผ่าน 6 ช่วงตามลำดับ ระบบจะพาคุณไปทีละช่วงอัตโนมัติ
+      ช่วงที่คุณต้องลงมือเองคือ <b>จั่วการ์ด</b> และ <b>เล่นการ์ด</b></p>
+      <div class="phase-flow">
+        <div class="phase-box"><div class="pn">🛡️</div><div class="pt">1. เตรียมรบ</div><div class="pd">ทักษะ/เอฟเฟกต์ช่วงต้นเทิร์นทำงาน</div></div>
+        <div class="phase-arrow">→</div>
+        <div class="phase-box"><div class="pn">⚖️</div><div class="pt">2. ตัดสิน</div><div class="pd">เปิดการ์ดตัดสินถ้ามีเอฟเฟกต์ค้าง</div></div>
+        <div class="phase-arrow">→</div>
+        <div class="phase-box"><div class="pn">🎴</div><div class="pt">3. จั่วการ์ด</div><div class="pd">กดที่กองไพ่กลางจอ จั่ว 2 ใบ</div></div>
+      </div>
+      <div class="phase-flow">
+        <div class="phase-box"><div class="pn">🃏</div><div class="pt">4. เล่นการ์ด</div><div class="pd">เล่นโจมตี/อุปกรณ์/กลได้ไม่จำกัด (ตามกฎการ์ด)</div></div>
+        <div class="phase-arrow">→</div>
+        <div class="phase-box"><div class="pn">🗑️</div><div class="pt">5. ทิ้งการ์ด</div><div class="pd">ถ้าไพ่ในมือ &gt; HP ต้องทิ้งส่วนเกิน</div></div>
+        <div class="phase-arrow">→</div>
+        <div class="phase-box"><div class="pn">🏁</div><div class="pt">6. สิ้นสุดรอบ</div><div class="pd">เอฟเฟกต์ช่วงท้ายทำงาน แล้วส่งตาให้คนถัดไป</div></div>
+      </div>
+      <div class="guide-note">🎴 <b>ช่วงจั่ว:</b> เมื่อถึงตาคุณ กองไพ่กลางจอจะเรืองแสง — กดเพื่อจั่ว 2 ใบ</div>
+      <div class="guide-note">🃏 <b>ช่วงเล่น:</b> คลิกไพ่ในมือเพื่อเล่น ปกติเล่น <b>[โจมตี] ได้ 1 ครั้ง/ตา</b> ส่วนอุปกรณ์และการ์ดกลเล่นได้ตามเงื่อนไข เมื่อพอใจแล้วกด <b>⏭ จบตา</b></div>
+      <div class="guide-note warn">🗑️ <b>กฎมือ:</b> จบตาแล้วถ้าไพ่ในมือมากกว่าค่า HP ปัจจุบัน ต้องทิ้งให้เหลือเท่ากับ HP</div>
+    `;
+
+  } else if (tab === 'cards') {
+    const basics = [
+      { k: 'Attack', emoji: '⚔️' },
+      { k: 'Dodge', emoji: '🛡️' },
+      { k: 'Peach', emoji: '🍑' },
+    ];
+    const D = window.CARD_DATA || {};
+    content.innerHTML = `
+      <h3>🃏 การ์ดพื้นฐาน 3 ใบที่ต้องรู้</h3>
+      <p class="dim">นี่คือหัวใจของเกม — ไพ่โจมตี ป้องกัน และฟื้นพลัง คุ้นกับ 3 ใบนี้ก่อน
+      ส่วนการ์ดกล/อาวุธ/ม้า ดูเพิ่มได้ที่หน้า <b>📖 คลังข้อมูล</b></p>
+      <div class="guide-grid">
+        ${basics.map(b => {
+          const c = D[b.k] || {};
+          return `
+          <div class="guide-card">
+            <div class="gc-title">
+              <img src="${cardImg(b.k, '')}" onerror="this.style.display='none'" style="width:34px;height:48px;object-fit:cover;border-radius:4px;border:1px solid var(--border)">
+              <span>${b.emoji} ${c.nameTh || b.k}</span>
+            </div>
+            <div class="gc-body">${c.desc || ''}</div>
+            <div class="gc-goal">▶️ ${c.usage || ''}</div>
+            ${c.tips ? `<div class="gc-goal">💡 ${c.tips}</div>` : ''}
+          </div>`;
+        }).join('')}
+        <div class="guide-card">
+          <div class="gc-title">🧠 การ์ดกล · 🗡️ อุปกรณ์</div>
+          <div class="gc-body">การ์ดกล (เช่น ท้าดวล ขโมย ฝนลูกธนู) สร้างผลพิเศษ ส่วนอุปกรณ์ (อาวุธ/เกราะ/ม้า) วางหน้าตัวเพื่อเพิ่มพลังถาวร</div>
+          <div class="gc-goal">📖 รายละเอียดครบทุกใบอยู่ที่หน้า "คลังข้อมูล"</div>
+        </div>
+      </div>
+      <h4>🎯 แนวคิดสำคัญ</h4>
+      <div class="guide-note"><b>ระยะโจมตี:</b> โจมตีได้เฉพาะคนที่อยู่ "ในระยะ" — ม้าและอาวุธเปลี่ยนระยะได้</div>
+      <div class="guide-note"><b>ตอบโต้:</b> เมื่อถูกโจมตี/การ์ดกลใส่ ระบบจะเด้งหน้าต่างให้เลือกเล่น [หลบหลีก] หรือไพ่ตอบโต้</div>
+      <div class="guide-note warn"><b>ใกล้ตาย:</b> เมื่อ HP เหลือ 0 จะเข้าภาวะใกล้ตาย — คุณหรือใครก็ได้เล่น [เพอช์] ช่วยได้ก่อนตายจริง</div>
+    `;
+
+  } else if (tab === 'buttons') {
+    content.innerHTML = `
+      <h3>🎮 ปุ่มและสัญลักษณ์ในเกม</h3>
+      <p class="dim">รวมปุ่มที่จะเจอระหว่างเล่น ปุ่มบางปุ่มจะโผล่เฉพาะตอนที่ใช้ได้เท่านั้น</p>
+      <div class="btn-ref">
+        <div class="btn-ref-row"><div class="btn-ref-chip" style="border-color:var(--gold);color:var(--gold-light)">🎴 กองไพ่</div><div class="btn-ref-desc">กองกลางจอ — เมื่อถึง <b>ช่วงจั่วของคุณ</b> จะเรืองแสงพร้อมข้อความ "👆 กดเพื่อจั่ว!" กดเพื่อจั่ว 2 ใบ</div></div>
+        <div class="btn-ref-row"><div class="btn-ref-chip">♻️ กองทิ้ง</div><div class="btn-ref-desc">ไพ่ที่ถูกใช้/ทิ้งไปแล้ว <b>คลิกเพื่อดูทั้งกอง</b> ย้อนได้ว่ามีอะไรออกไปบ้าง</div></div>
+        <div class="btn-ref-row"><div class="btn-ref-chip">🃏 ไพ่ในมือ</div><div class="btn-ref-desc">แถวล่างสุด — <b>คลิกไพ่</b> เพื่อเล่น ใบที่เล่นได้ตอนนี้จะสว่าง ใบที่เล่นไม่ได้จะหรี่</div></div>
+        <div class="btn-ref-row"><div class="btn-ref-chip" style="border-color:#9b59b6;color:#d2a8e8">✨ ใช้ทักษะ</div><div class="btn-ref-desc">โผล่เมื่อขุนพลของคุณมี <b>ทักษะที่สั่งใช้เองได้</b> ในจังหวะนั้น</div></div>
+        <div class="btn-ref-row"><div class="btn-ref-chip" style="border-color:#3498db;color:#3498db">✕ ยกเลิก</div><div class="btn-ref-desc">ยกเลิกการเลือกเป้าหมาย/การเล่นไพ่ที่กำลังทำค้างอยู่</div></div>
+        <div class="btn-ref-row"><div class="btn-ref-chip" style="border-color:var(--gold);color:var(--gold-light)">⏭ จบตา</div><div class="btn-ref-desc">จบ <b>ช่วงเล่นการ์ด</b> ของคุณ ส่งตาให้คนถัดไป (อาจต้องทิ้งไพ่เกินมือก่อน)</div></div>
+        <div class="btn-ref-row"><div class="btn-ref-chip">⏱️ ตัวจับเวลา</div><div class="btn-ref-desc">วงกลมกลางจอ นับเวลาที่เหลือในตา/การตอบโต้ หมดเวลาจะข้ามให้อัตโนมัติ</div></div>
+        <div class="btn-ref-row"><div class="btn-ref-chip">❤️ HP</div><div class="btn-ref-desc">หัวใจใต้ชื่อผู้เล่น = พลังชีวิตปัจจุบัน เหลือ 0 = ใกล้ตาย</div></div>
+        <div class="btn-ref-row"><div class="btn-ref-chip">📋 แถบข้าง</div><div class="btn-ref-desc">สลับดู <b>บันทึกการรบ · แชท · รายชื่อผู้เล่น</b> ได้จากแท็บด้านขวา</div></div>
+        <div class="btn-ref-row"><div class="btn-ref-chip" style="border-color:var(--gold);color:var(--gold-light)">📘 คู่มือ</div><div class="btn-ref-desc">ปุ่มมุมขวาบน — เปิดคู่มือนี้ได้ตลอดเวลาแม้กำลังเล่นอยู่</div></div>
+      </div>
+      <div class="guide-note">🎯 <b>การเลือกเป้าหมาย:</b> หลังคลิกไพ่ที่ต้องเลือกเป้า ให้ <b>คลิกที่ตัวผู้เล่น</b> รอบวง เป้าที่เลือกได้จะถูกไฮไลต์</div>
+    `;
+
+  } else if (tab === 'rulebook') {
+    content.innerHTML = `
+      <h3>📜 กฎกติกาฉบับเต็ม</h3>
+      <p class="dim">เรียบเรียงใหม่จากคู่มือต้นฉบับให้อ่านง่ายและตรงกับเกมจริง — ครอบคลุมตั้งแต่ส่วนประกอบ การเริ่มเกม จนถึงประเภทการ์ดทั้งหมด</p>
+
+      <div class="rule-sec">
+        <h4>1️⃣ ส่วนประกอบของเกม</h4>
+        <ul class="rule-list">
+          <li><b>การ์ดเล่น 108 ใบ</b> — แบ่งเป็น การ์ดพื้นฐาน (โจมตี/หลบหลีก/เพอช์), การ์ดกล, อาวุธ, เกราะ และม้า</li>
+          <li><b>การ์ดขุนพล 30 ใบ</b> — แต่ละใบมีแคว้น (เว่ย/สู่/อู๋/ไม่สังกัด), ค่าพลังชีวิต และทักษะเฉพาะตัว</li>
+          <li><b>การ์ดบทบาท</b> — จักรพรรดิ · ผู้ภักดี · กบฎ · ทรยศ</li>
+          <li><b>เครื่องหมายพลังชีวิต (❤️)</b> และกองไพ่/กองทิ้งกลางโต๊ะ</li>
+        </ul>
+      </div>
+
+      <div class="rule-sec">
+        <h4>2️⃣ การเริ่มเกม</h4>
+        <ul class="rule-list">
+          <li>แจก <b>การ์ดบทบาทลับ</b> ให้ทุกคน 1 ใบ ตามจำนวนผู้เล่น (ดูตารางด้านล่าง) — มีเฉพาะ <b>จักรพรรดิ</b> ที่เปิดเผยตัว</li>
+          <li>จักรพรรดิเลือกขุนพลก่อน จากนั้นผู้เล่นอื่นเลือกขุนพลของตน</li>
+          <li>ตั้งค่าพลังชีวิตเริ่มต้นตามขุนพล — <b>จักรพรรดิได้ ❤️ พิเศษ +1</b> (ในเกม 3 คนขึ้นไป)</li>
+          <li>ทุกคนจั่วการ์ดขึ้นมือ <b>4 ใบ</b> แล้วเริ่มเล่นโดยจักรพรรดิเป็นคนแรก วนตามเข็มนาฬิกา</li>
+        </ul>
+        <p class="dim" style="margin-top:6px">📊 ตารางแบ่งบทบาทตามจำนวนผู้เล่น (ตรงตามระบบเกม)</p>
+        <table class="rule-table">
+          <tr><th>ผู้เล่น</th><th>👑 จักรพรรดิ</th><th>🛡️ ผู้ภักดี</th><th>⚔️ กบฎ</th><th>🕵️ ทรยศ</th></tr>
+          <tr><td>2 คน</td><td>1</td><td>0</td><td>1</td><td>0</td></tr>
+          <tr><td>3 คน</td><td>1</td><td>0</td><td>1</td><td>1</td></tr>
+          <tr><td>4 คน</td><td>1</td><td>1</td><td>1</td><td>1</td></tr>
+          <tr><td>5 คน</td><td>1</td><td>1</td><td>2</td><td>1</td></tr>
+          <tr><td>6 คน</td><td>1</td><td>1</td><td>3</td><td>1</td></tr>
+          <tr><td>7 คน</td><td>1</td><td>2</td><td>3</td><td>1</td></tr>
+          <tr><td>8 คน</td><td>1</td><td>2</td><td>4</td><td>1</td></tr>
+          <tr><td>9 คน</td><td>1</td><td>3</td><td>4</td><td>1</td></tr>
+          <tr><td>10 คน</td><td>1</td><td>3</td><td>4</td><td>2</td></tr>
+        </table>
+      </div>
+
+      <div class="rule-sec">
+        <h4>3️⃣ เป้าหมายของแต่ละบทบาท (เงื่อนไขชนะ)</h4>
+        <ul class="rule-list">
+          <li><b>👑 จักรพรรดิ + 🛡️ ผู้ภักดี</b> — ชนะเมื่อกำจัด <b>กบฎและทรยศทั้งหมด</b></li>
+          <li><b>⚔️ กบฎ</b> — ชนะเมื่อ <b>สังหารจักรพรรดิ</b> (ตราบใดที่ยังไม่เข้าเงื่อนไขชนะของทรยศ)</li>
+          <li><b>🕵️ ทรยศ</b> — ชนะเมื่อกำจัดทุกคนจน <b>เหลือรอดเพียงคนเดียว</b> คู่กับจักรพรรดิที่ตายไปแล้ว</li>
+        </ul>
+        <div class="guide-note">💀 เมื่อ <b>ผู้ภักดี</b> ถูกจักรพรรดิสังหาร จักรพรรดิจะถูกลงโทษ (ทิ้งการ์ดในมือและอุปกรณ์ทั้งหมด) — จงระวังการโจมตีพวกเดียวกัน</div>
+      </div>
+
+      <div class="rule-sec">
+        <h4>4️⃣ ขั้นตอนในหนึ่งเทิร์น</h4>
+        <p>เมื่อถึงตาคุณ จะไล่ผ่าน 6 ช่วงตามลำดับ:</p>
+        <ul class="rule-list">
+          <li><b>① เตรียมรบ</b> — ทักษะ/เอฟเฟกต์ช่วงต้นเทิร์นทำงาน</li>
+          <li><b>② เปิดการ์ดตัดสิน</b> — หากมีเอฟเฟกต์ค้าง (เช่น คำสาป) ให้เปิดการ์ดตัดสินเพื่อหาผล</li>
+          <li><b>③ จั่วการ์ด</b> — จั่ว <b>2 ใบ</b> จากกองกลาง (กดที่กองไพ่)</li>
+          <li><b>④ เล่นการ์ด</b> — เล่นการ์ดได้ตามต้องการ แต่ <b>[โจมตี] เล่นได้ 1 ครั้งต่อตา</b> (ยกเว้นมีอาวุธ/ทักษะพิเศษ)</li>
+          <li><b>⑤ ทิ้งการ์ด</b> — ถ้าจำนวนไพ่ในมือ <b>มากกว่าค่า HP ปัจจุบัน</b> ต้องทิ้งส่วนเกินจนเท่ากับ HP</li>
+          <li><b>⑥ สิ้นสุดรอบ</b> — เอฟเฟกต์ช่วงท้ายทำงาน แล้วส่งตาให้คนถัดไป</li>
+        </ul>
+      </div>
+
+      <div class="rule-sec">
+        <h4>5️⃣ การต่อสู้และระยะโจมตี</h4>
+        <ul class="rule-list">
+          <li><b>[โจมตี] (杀)</b> สร้างความเสียหาย 1 หน่วยให้เป้าหมายที่อยู่ <b>ในระยะ</b> — เป้าหมายเล่น <b>[หลบหลีก] (闪)</b> เพื่อหักล้างได้</li>
+          <li><b>ระยะ</b> คำนวณจากตำแหน่งที่นั่งรอบวง — <b>ม้าโจมตี (-1)</b> ทำให้คุณเข้าถึงคนอื่นง่ายขึ้น, <b>ม้าป้องกัน (+1)</b> ทำให้คนอื่นเข้าถึงคุณยากขึ้น</li>
+          <li><b>อาวุธ</b> เพิ่มระยะโจมตีและอาจมีผลพิเศษ — ปกติระยะโจมตีพื้นฐานคือ 1</li>
+          <li>เมื่อถูกโจมตีหรือการ์ดกลใส่ ระบบจะเปิดหน้าต่างให้คุณ <b>เลือกตอบโต้</b> ด้วยการ์ดที่เหมาะสม</li>
+        </ul>
+      </div>
+
+      <div class="rule-sec">
+        <h4>6️⃣ การบาดเจ็บ ความตาย และสภาพใกล้ตาย</h4>
+        <ul class="rule-list">
+          <li>ความเสียหายแต่ละหน่วยลด ❤️ ลง 1 — เมื่อ <b>HP เหลือ 0</b> จะเข้าสู่ <b>สภาพใกล้ตาย</b></li>
+          <li>ในสภาพใกล้ตาย ผู้เล่นคนนั้นหรือใครก็ได้สามารถเล่น <b>[เพอช์] (桃)</b> เพื่อกู้ HP ให้กลับเป็น 1 ก่อนจะตายจริง</li>
+          <li>ถ้าไม่มีใครช่วย ผู้เล่นนั้น <b>เสียชีวิต</b> และเปิดเผยบทบาท — การ์ดในมือและอุปกรณ์ทั้งหมดเข้ากองทิ้ง</li>
+          <li><b>รางวัล/บทลงโทษ:</b> ผู้สังหารกบฎจะได้ <b>จั่วการ์ด 3 ใบ</b> · ถ้าจักรพรรดิสังหารผู้ภักดี จักรพรรดิต้องทิ้งการ์ดทั้งหมด</li>
+        </ul>
+      </div>
+
+      <div class="rule-sec">
+        <h4>7️⃣ ประเภทการ์ด</h4>
+        <ul class="rule-list">
+          <li><b>การ์ดพื้นฐาน</b> — โจมตี, หลบหลีก, เพอช์ (ใช้บ่อยที่สุด)</li>
+          <li><b>การ์ดกล</b> — มีผลพิเศษ เช่น ท้าดวล, ขโมย, ทำลายสะพาน, ฝนลูกธนู, ยืมดาบ ฯลฯ</li>
+          <li><b>อุปกรณ์: อาวุธ / เกราะ / ม้า</b> — วางหน้าตัวเองเพื่อเพิ่มพลังถาวรจนกว่าจะถูกทำลายหรือเปลี่ยน</li>
+        </ul>
+        <div class="guide-note">📖 รายละเอียดครบทุกใบ (รูป + คำอธิบาย + เคล็ดลับ) ดูได้ที่หน้า <b>คลังข้อมูล</b> หรือแท็บ <b>🃏 การ์ดพื้นฐาน</b> ด้านบน</div>
+      </div>
+    `;
+  }
+}
+
 // ─── Win Screen ────────────────────────────────────────────────────────────
 document.getElementById('btn-back-menu').addEventListener('click', () => {
   socket.emit('leaveRoom');

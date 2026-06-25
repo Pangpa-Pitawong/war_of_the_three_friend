@@ -32,6 +32,7 @@
   <div class="menu-container gold-frame" style="padding:24px 32px">
     <button class="menu-btn primary" id="btn-play-online">⚔️ เล่นออนไลน์</button>
     <button class="menu-btn" id="btn-create-room">🏠 สร้างห้อง</button>
+    <button class="menu-btn" id="btn-guide">📘 คู่มือการเล่น</button>
     <button class="menu-btn" id="btn-encyclopedia">📖 คลังข้อมูล</button>
     <button class="menu-btn" onclick="window.location.href='#'" style="opacity:0.5;cursor:not-allowed">👥 เพื่อน (เร็วๆ นี้)</button>
     <button class="menu-btn" onclick="window.location.href='#'" style="opacity:0.5;cursor:not-allowed">📜 ประวัติแมทช์ (เร็วๆ นี้)</button>
@@ -158,6 +159,27 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: GUIDE (คู่มือการเล่นและกฎกติกา) -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="modal-guide" class="modal-overlay" style="z-index:210">
+  <div class="modal gold-frame guide-modal">
+    <div class="guide-head">
+      <h2 style="margin:0">📘 คู่มือการเล่น &amp; กฎกติกา</h2>
+      <button class="btn btn-cancel" data-close-modal="modal-guide" style="width:auto;padding:8px 16px">✕ ปิด</button>
+    </div>
+    <div class="guide-tabs" id="guide-tabs">
+      <button class="guide-tab active" data-guide="start">🚀 เริ่มเล่น</button>
+      <button class="guide-tab" data-guide="roles">🎭 บทบาท &amp; เป้าหมาย</button>
+      <button class="guide-tab" data-guide="turn">🔄 ลำดับเทิร์น</button>
+      <button class="guide-tab" data-guide="cards">🃏 การ์ดพื้นฐาน</button>
+      <button class="guide-tab" data-guide="buttons">🎮 ปุ่มในเกม</button>
+      <button class="guide-tab" data-guide="rulebook">📜 กฎฉบับเต็ม</button>
+    </div>
+    <div id="guide-content" class="guide-content"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
 <!-- SCREEN: LOBBY -->
 <!-- ══════════════════════════════════════════════════════════════════════ -->
 <div id="screen-lobby" class="screen" style="flex-direction:row;padding:20px;gap:16px;align-items:flex-start;justify-content:center;overflow-y:auto">
@@ -183,6 +205,7 @@
     <!-- Actions -->
     <div class="lobby-actions">
       <button class="btn btn-cancel" id="btn-leave-lobby">← ออก</button>
+      <button class="btn btn-cancel" id="btn-guide-lobby" title="คู่มือการเล่นและกฎกติกา">📘 คู่มือ</button>
       <button class="btn btn-confirm" id="btn-ready" style="flex:1">✓ พร้อมแล้ว</button>
       <button class="btn btn-confirm" id="btn-start" style="background:linear-gradient(135deg,#27ae60,#2ecc71);border-color:#27ae60;display:none">▶ เริ่มเกม</button>
     </div>
@@ -330,6 +353,7 @@
 <!-- SCREEN: GAME BOARD -->
 <!-- ══════════════════════════════════════════════════════════════════════ -->
 <div id="screen-game" class="screen">
+  <button id="btn-guide-game" class="guide-fab" title="คู่มือการเล่นและกฎกติกา">📘</button>
   <div class="game-layout">
     <!-- Main game area -->
     <div class="game-center">
