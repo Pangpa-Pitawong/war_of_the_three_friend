@@ -26,6 +26,50 @@ app.use('/Roll', express.static(path.join(__dirname, 'Roll')));
 const rooms = new Map();   // roomCode → Room
 const sockets = new Map(); // socketId → { playerId, roomCode, username }
 
+// ─── บอท (AI) — ซ็อกเก็ตเสมือน: emit ถึงบอทจะถูกส่งเข้า "สมองบอท" แทนเครือข่าย ──────
+const { BotBrain, BotSocket, BOT_NAMES } = require('./bot');
+const botSockets = new Map(); // 'bot:<playerId>' → BotSocket
+function getSock(socketId) {
+  if (!socketId) return undefined;
+  return botSockets.get(socketId) || io.sockets.sockets.get(socketId);
+}
+function addBotToRoom(room) {
+  if (room.players.length >= room.settings.playerLimit) return null;
+  const used = new Set(room.players.map(p => p.username));
+  const name = BOT_NAMES.find(n => !used.has(n)) || `บอท·${room.players.length + 1}`;
+  const id = genPlayerId();
+  const sid = 'bot:' + id;
+  room.addPlayer(id, sid, name);
+  const p = room.findPlayer(id);
+  p.isAI = true;
+  p.ready = true;
+  const brain = new BotBrain(room, id, { CHAR_PASSIVES, CHARACTERS, broadcastRoom });
+  botSockets.set(sid, new BotSocket(brain));
+  return p;
+}
+function removeBot(socketId) {
+  const bs = botSockets.get(socketId);
+  if (bs) { bs.brain.destroy(); botSockets.delete(socketId); }
+}
+function humansIn(room) { return room.players.filter(p => !p.isAI); }
+// ลบห้องทิ้งทั้งหมด (หยุดเกม + ปิดบอท) — ใช้เมื่อไม่มีผู้เล่นจริงเหลือ
+function destroyRoom(room) {
+  room.players.forEach(p => { if (p.isAI) removeBot(p.socketId); });
+  if (room.game) room.game.destroy();
+  clearTimeout(room.rollTimer);
+  clearTimeout(room.emptyTimer);
+  room.state = 'ended';
+  rooms.delete(room.code);
+}
+// ห้องที่มีแต่บอท/ผู้เล่นจริงหลุดหมด → รอ 2 นาทีให้ reconnect แล้วลบทิ้ง
+function checkAbandoned(room) {
+  clearTimeout(room.emptyTimer);
+  if (room.players.some(p => !p.isAI && p.connected)) return;
+  room.emptyTimer = setTimeout(() => {
+    if (rooms.get(room.code) === room && !room.players.some(p => !p.isAI && p.connected)) destroyRoom(room);
+  }, 120000);
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function genRoomCode() {
   const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -171,17 +215,17 @@ const ACTIVE_SKILLS = {
   huanggai: { key: 'kurou',    name: 'เสียสละตน (苦肉)',  needs: 'confirm',     oncePerTurn: false,
               desc: 'เสีย HP 1 หน่วยเพื่อจั่วการ์ด 2 ใบ' },
   huatuo:   { key: 'qingnang', name: 'หมอผู้เมตตา (青囊)',   needs: 'card+target', oncePerTurn: true,
-              desc: 'จำกัด 1 ครั้งต่อช่วงเล่นการ์ด ทิ้งการ์ด 1 ใบจากมือเพื่อให้ตัวละครที่บาดเจ็บฟื้น HP 1 หน่วย' },
+              desc: 'จำกัด 1 ครั้งต่อช่วงเล่นการ์ด ทิ้งการ์ด 1 ใบจากมือเพื่อให้ตัวละครที่บาดเจ็บ 1 คน (รวมถึงตัวเองได้) ฟื้น HP 1 หน่วย' },
   liubei:   { key: 'rende',    name: 'เมตตาธรรม (仁德)',  needs: 'cards+target', oncePerTurn: false,
-              desc: 'มอบการ์ดในมือจำนวนเท่าใดก็ได้ให้ตัวละครอื่น — ฟื้น HP 1 หน่วยถ้ามอบรวม 2 ใบขึ้นไปในตานี้ (ครั้งเดียว)' },
+              desc: 'มอบการ์ดในมือจำนวนเท่าใดก็ได้ให้ตัวละครอื่น (การ์ดให้คนอื่นเท่านั้น) — ตัวคุณเองฟื้น HP 1 หน่วยถ้ามอบรวม 2 ใบขึ้นไปในตานี้ (ครั้งเดียว)' },
   ladygan:  { key: 'shushen',  name: 'ปัญญาประเสริฐ (淑慎)', needs: 'confirm', oncePerTurn: true,
-              desc: 'ทิ้งการ์ดในมือทั้งหมด — ฟื้น HP 1 หน่วยถ้าจำนวนที่ทิ้งมากกว่า HP ปัจจุบัน' },
+              desc: 'ทิ้งการ์ดในมือทั้งหมด — ตัวคุณเองฟื้น HP 1 หน่วยถ้าจำนวนที่ทิ้งมากกว่า HP ปัจจุบัน' },
   sunss:    { key: 'jieyin',   name: 'การสมรส (结姻)',   needs: 'cards+target', oncePerTurn: true,
               desc: 'ทิ้งการ์ด 2 ใบจากมือ เลือกตัวละครชายที่บาดเจ็บ — ทั้งคุณและเขาฟื้น HP 1 หน่วย' },
   diaochan: { key: 'lijian',   name: 'เสน่ห์มารยา (离间)',  needs: 'card+target2', oncePerTurn: true,
               desc: 'ทิ้งการ์ด 1 ใบ เลือกตัวละครชาย 2 คนให้ประลองกัน (ยกเลิกด้วย [ขัดขวาง] ไม่ได้)' },
   zhouyu:   { key: 'fanjian',  name: 'หว่านเมล็ดหวาดระแวง (反间)', needs: 'target', oncePerTurn: true,
-              desc: 'เลือกตัวละคร ให้เขาทายชนิดไพ่ (suit) แล้วจั่วไพ่ 1 ใบจากมือคุณเปิดเผย — ถ้าชนิดไม่ตรงรับ 1 ดาเมจ (เก็บไพ่ไว้เสมอ)' },
+              desc: 'เลือกตัวละคร 1 คน (รวมถึงตัวเองได้) ให้เขาทายชนิดไพ่ (suit) แล้วจั่วไพ่ 1 ใบจากมือคุณเปิดเผย — ถ้าชนิดไม่ตรงรับ 1 ดาเมจ (เก็บไพ่ไว้เสมอ)' },
 };
 
 // การ์ดที่ใช้ "ตอบโต้" เท่านั้น — ห้ามเล่นเชิงรุกในเฟสเล่นการ์ด
@@ -458,7 +502,9 @@ class Room {
       let per = Math.min(DEFAULT_PER, Math.floor(d.pool.length / Math.max(1, nOthers)));
       if (per < 1) per = 1;   // กรณีกองน้อยกว่าจำนวนคน (ไม่ควรเกิดกับโรสเตอร์ปกติ) — แจกเท่าที่กองมี
       if (per < DEFAULT_PER) {
-        this.addLog('ระบบ', `🎴 ตัวละครในกองเหลือ ${d.pool.length} ตัวสำหรับผู้เล่น ${nOthers} คน — ปรับการแจกเป็นคนละ ${per} ตัว`);
+        // (Room ไม่มี addLog — แจ้งผ่านแชทห้องแทน)
+        io.to(this.code).emit('chatMessage', { from: 'ระบบ', time: Date.now(),
+          message: `🎴 ตัวละครในกองเหลือ ${d.pool.length} ตัวสำหรับผู้เล่น ${nOthers} คน — ปรับการแจกเป็นคนละ ${per} ตัว` });
       }
       // splice ไม่เกินจำนวนที่กองมีจริง → ไม่มีใครได้มือว่าง (กัน over-deal)
       others.forEach(p => { d.candidates[p.id] = d.pool.splice(0, Math.min(per, d.pool.length)); });
@@ -483,11 +529,11 @@ class Room {
     this.game = new Game(this);
     this.game.start();
     this.players.forEach(p => {
-      const sock = io.sockets.sockets.get(p.socketId);
+      const sock = getSock(p.socketId);
       if (sock) sock.emit('gameStarted', this.publicState(p.id));
     });
     this.spectators.forEach(sid => {
-      const sock = io.sockets.sockets.get(sid);
+      const sock = getSock(sid);
       if (sock) sock.emit('gameStarted', this.publicState(null));
     });
   }
@@ -542,14 +588,43 @@ class Game {
 
   broadcast() {
     this.room.players.forEach(p => {
-      const sock = io.sockets.sockets.get(p.socketId);
+      const sock = getSock(p.socketId);
       if (sock) sock.emit('roomUpdate', this.room.publicState(p.id));
     });
     // ผู้ชม
     this.room.spectators.forEach(sid => {
-      const sock = io.sockets.sockets.get(sid);
+      const sock = getSock(sid);
       if (sock) sock.emit('roomUpdate', this.room.publicState(null));
     });
+  }
+
+  // หยุดตัวจับเวลาทั้งหมดของเกม (ใช้ตอนลบห้อง)
+  destroy() {
+    for (const k of Object.keys(this)) {
+      if (/(Timer|Interval)$/.test(k) && this[k]) { clearInterval(this[k]); clearTimeout(this[k]); }
+    }
+    if (this.halberPending?.timer) clearTimeout(this.halberPending.timer);
+    this.pending = null;
+  }
+
+  // อนิเมชั่นการ์ดเคลื่อนที่ (ฝั่ง client): kind = play | discard | equip | judge | give
+  //   play=ใช้/เล่นจากมือไปกลางโต๊ะ, discard=ทิ้งลงกองทิ้ง, equip=ติดตั้งอุปกรณ์, judge=วางช่องตัดสิน, give=มอบให้คนอื่น
+  emitMotion(player, cards, kind, toId = null) {
+    if (!player || !cards) return;
+    const list = (Array.isArray(cards) ? cards : [cards]).filter(Boolean);
+    if (!list.length) return;
+    io.to(this.room.code).emit('cardMotion', {
+      playerId: player.id, kind, toId,
+      cards: list.map(c => ({ id: c.id, name: c.name, type: c.type, suit: c.suit, rank: c.rank, color: c.color })),
+    });
+  }
+
+  // บันทึก "ใครทำร้ายใคร" — บอทใช้เดาฝ่ายของผู้เล่น
+  noteHarm(from, to, amount) {
+    if (!from || !to || from.id === to.id) return;
+    this.harmLog = this.harmLog || [];
+    this.harmLog.push({ from: from.id, to: to.id, amount });
+    if (this.harmLog.length > 300) this.harmLog.shift();
   }
 
   // ─── ระยะทาง (Distance) — ระยะที่สั้นที่สุดบนวงกลม + ตัวปรับจากม้า ──────────────
@@ -613,16 +688,56 @@ class Game {
     player.hp = Math.min(player.maxHp, player.hp + amount);
     const gained = player.hp - before;
     if (gained <= 0) return 0;
-    // นางกาน (甘夫人) — Shen Zhi (神智): เมื่อฟื้น HP → ให้ตัวละครอื่นจั่ว 1 (2 ถ้ามือว่าง)
-    if (CHAR_PASSIVES[player.character]?.shenzhi) {
-      const other = this.nextAlivePlayer(player);
-      if (other) {
-        const n = other.hand.length === 0 ? 2 : 1;
-        other.hand.push(...this.drawCards(n));
-        this.addLog(player.username, `🧠 [ความรอบคอบ/神智] ฟื้นพลังชีวิต — ${other.username} จั่ว ${n} ใบ`);
+    // นางกาน (甘夫人) — Shen Zhi (神智): เมื่อฟื้น HP (ฮีลเข้าตัวเอง) → "เลือก" ตัวละครอื่นให้จั่ว 1 (2 ถ้ามือว่าง)
+    //   การ์ดต้องให้คนอื่นเท่านั้น — ถ้ามีคนอื่นคนเดียวให้อัตโนมัติ, หลายคนเปิดหน้าต่างให้เลือก (ไม่ขวางเกม)
+    if (CHAR_PASSIVES[player.character]?.shenzhi && player.hp > 0) {
+      const others = this.room.players.filter(p => p.hp > 0 && p.id !== player.id);
+      if (others.length === 1) this._applyShenzhi(player, others[0]);
+      else if (others.length > 1) {
+        this.shenzhiQueue = this.shenzhiQueue || [];
+        this.shenzhiQueue.push(player.id);
+        this._promptShenzhi();
       }
     }
     return gained;
+  }
+
+  _applyShenzhi(ladygan, other) {
+    const n = other.hand.length === 0 ? 2 : 1;
+    other.hand.push(...this.drawCards(n));
+    this.addLog(ladygan.username, `🧠 [ความรอบคอบ/神智] ฟื้นพลังชีวิต — ให้ ${other.username} จั่ว ${n} ใบ`);
+  }
+
+  // เปิดหน้าต่างให้นางกานเลือกคนจั่ว (ทีละครั้งตามคิว) — หมดเวลา 15 วิ → ให้คนถัดไปตามที่นั่ง
+  _promptShenzhi() {
+    if (this.shenzhi || !this.shenzhiQueue?.length) return;
+    const pid = this.shenzhiQueue.shift();
+    const lg = this.room.players.find(p => p.id === pid);
+    const others = this.room.players.filter(p => p.hp > 0 && p.id !== pid);
+    if (!lg || lg.hp <= 0 || others.length === 0) return this._promptShenzhi();
+    this.shenzhi = { playerId: pid };
+    clearTimeout(this.shenzhiTimer);
+    this.shenzhiTimer = setTimeout(() => {
+      if (this.shenzhi?.playerId === pid) this.resolveShenzhi(pid, this.nextAlivePlayer(lg)?.id);
+    }, 15000);
+    const sock = getSock(lg.socketId);
+    if (sock) sock.emit('askShenzhi', {
+      players: others.map(p => ({ id: p.id, name: p.username, handCount: p.hand.length })),
+    });
+  }
+
+  resolveShenzhi(playerId, targetId) {
+    const sz = this.shenzhi;
+    if (!sz || sz.playerId !== playerId) return { ok: false, msg: 'ไม่มีหน้าต่างความรอบคอบที่รออยู่' };
+    const lg = this.room.players.find(p => p.id === playerId);
+    let other = this.room.players.find(p => p.id === targetId && p.hp > 0 && p.id !== playerId);
+    if (!other) other = this.nextAlivePlayer(lg);           // เลือกไม่ถูกต้อง/ตัวเอง → คนถัดไป
+    clearTimeout(this.shenzhiTimer);
+    this.shenzhi = null;
+    if (lg && other && other.id !== lg.id && this.room.state === 'playing') this._applyShenzhi(lg, other);
+    this.broadcast();
+    this._promptShenzhi();
+    return { ok: true };
   }
 
   // เรียกหลังผู้เล่นเสียการ์ดในมือ — หลู่ซวิน: Lian Ying (连营) เสียไพ่ใบสุดท้าย → จั่ว 1
@@ -692,7 +807,7 @@ class Game {
             if (this.timer <= 0) { clearInterval(this.yijiTimer); this.resolveYiji(victim.id, null); }
           }, 1000);
           this.addLog(victim.username, `📜 [มรดกตกทอด/遗计] โดน ${amount} ดาเมจ — ดูไพ่ ${drawn.length} ใบ เลือกมอบให้ใครก็ได้`);
-          const sock = io.sockets.sockets.get(victim.socketId);
+          const sock = getSock(victim.socketId);
           if (sock) sock.emit('askYiji', {
             cards: drawn.map(c => ({ id: c.id, name: c.name, suit: c.suit, rank: c.rank, color: c.color })),
             players: this.room.players.filter(p => p.hp > 0).map(p => ({ id: p.id, name: p.username })),
@@ -796,6 +911,7 @@ class Game {
         if (toDiscard.length === 0) return { ok: false, msg: 'เลือกไพ่ที่จะทิ้งอย่างน้อย 1 ใบ' };
         player.hand = player.hand.filter(c => !ids.includes(c.id));
         toDiscard.forEach(c => this.discardPile.push(c));
+        this.emitMotion(player, toDiscard, 'discard');
         player.hand.push(...this.drawCards(toDiscard.length));
         player.skillUsed.zhiheng = true;
         this.addLog(player.username, `🌊 ถ่วงดุลอำนาจ — ทิ้ง ${toDiscard.length} ใบ จั่วใหม่ ${toDiscard.length} ใบ`);
@@ -818,6 +934,7 @@ class Game {
         if (target.hp >= target.maxHp) return { ok: false, msg: 'เป้าหมายพลังชีวิตเต็มแล้ว' };
         player.hand = player.hand.filter(c => c.id !== card.id);
         this.discardPile.push(card);
+        this.emitMotion(player, card, 'discard');
         this.heal(target, 1, player);
         player.skillUsed.qingnang = true;
         this.addLog(player.username, `💚 ถุงยาเขียว — รักษา ${target.username} +1 พลังชีวิต`);
@@ -831,6 +948,7 @@ class Game {
         if (!target) return { ok: false, msg: 'เลือกตัวละครอื่นที่จะมอบให้' };
         player.hand = player.hand.filter(c => !ids.includes(c.id));
         target.hand.push(...give);
+        this.emitMotion(player, give, 'give', target.id);
         player.rendeGiven = (player.rendeGiven || 0) + give.length;
         this.addLog(player.username, `🤝 เมตตาธรรม — มอบการ์ด ${give.length} ใบให้ ${target.username}`);
         if (player.rendeGiven >= 2 && !player.skillUsed.rendeHeal && player.hp < player.maxHp) {
@@ -845,6 +963,7 @@ class Game {
         if (player.hand.length === 0) return { ok: false, msg: 'ไม่มีการ์ดในมือ' };
         const n = player.hand.length;
         player.hand.forEach(c => this.discardPile.push(c));
+        this.emitMotion(player, player.hand, 'discard');
         player.hand = [];
         this.addLog(player.username, `🌸 ปัญญาประเสริฐ — ทิ้งการ์ดทั้งหมด ${n} ใบ`);
         if (n > player.hp && player.hp < player.maxHp) {
@@ -866,6 +985,7 @@ class Game {
         if (target.hp >= target.maxHp && player.hp >= player.maxHp) return { ok: false, msg: 'ไม่มีใครบาดเจ็บให้รักษา' };
         player.hand = player.hand.filter(c => !ids.includes(c.id));
         give.forEach(c => this.discardPile.push(c));
+        this.emitMotion(player, give, 'discard');
         this.heal(player, 1, player);
         this.heal(target, 1, player);
         player.skillUsed.jieyin = true;
@@ -886,6 +1006,7 @@ class Game {
         const handBefore = player.hand.length;
         player.hand = player.hand.filter(c => c.id !== card.id);
         this.discardPile.push(card);
+        this.emitMotion(player, card, 'discard');
         player.skillUsed.lijian = true;
         this.afterHandLoss(player, handBefore);
         // t1 ถูกบังคับให้ประลอง t2 (t1 เล่นโจมตีก่อน) — ยกเลิกด้วยขัดขวางไม่ได้
@@ -896,14 +1017,15 @@ class Game {
         return { ok: true };
       }
       case 'zhouyu': {  // หว่านเมล็ดหวาดระแวง (反间)
-        const target = this.room.players.find(p => p.id === payload.targetId && p.hp > 0 && p.id !== player.id);
+        // คำอธิบายเขียนแค่ "เลือกตัวละคร" (ไม่ได้ระบุว่าคนอื่น) → เลือกตัวเองได้
+        const target = this.room.players.find(p => p.id === payload.targetId && p.hp > 0);
         if (!target) return { ok: false, msg: 'เลือกตัวละครเป้าหมาย' };
         if (player.hand.length === 0) return { ok: false, msg: 'ไม่มีการ์ดในมือ' };
         player.skillUsed.fanjian = true;
         // เปิดหน้าต่างให้เป้าหมายทายชนิดไพ่ (suit)
         this.fanjian = { sourceId: player.id, targetId: target.id };
         this.addLog(player.username, `🎭 หว่านเมล็ดหวาดระแวง — ${target.username} ต้องทายชนิดไพ่`);
-        const sock = io.sockets.sockets.get(target.socketId);
+        const sock = getSock(target.socketId);
         if (sock) sock.emit('askFanjian', { sourceName: player.username });
         this.broadcast();
         return { ok: true };
@@ -965,7 +1087,7 @@ class Game {
           io.to(this.room.code).emit('timerTick', this.timer);
           if (this.timer <= 0) { clearInterval(this.lordTimer); this.resolveLordAssist(ally.id, null); }
         }, 1000);
-        const sock = io.sockets.sockets.get(ally.socketId);
+        const sock = getSock(ally.socketId);
         if (sock) sock.emit('askLordAssist', { need: la.need, lordName: lord?.username, skill: la.need === 'Dodge' ? '护驾' : '激将' });
         this.broadcast();
         return;
@@ -1073,7 +1195,7 @@ class Game {
           if (this.timer <= 0) { clearInterval(this.guanxingTimer); this.resolveGuanxing(cur.id, null); }
         }, 1000);
         this.addLog(cur.username, `🔭 [ดูดาว/观星] กำลังพิจารณาไพ่บนสุด ${cards.length} ใบ`);
-        const sock = io.sockets.sockets.get(cur.socketId);
+        const sock = getSock(cur.socketId);
         if (sock) sock.emit('askGuanxing', {
           cards: cards.map(c => ({ id: c.id, name: c.name, suit: c.suit, rank: c.rank, color: c.color })),
         });
@@ -1158,7 +1280,7 @@ class Game {
           if (this.timer <= 0) { clearInterval(this.guicaiTimer); this.resolveGuicai(simayi.id, null); }
         }, 1000);
         const judgeP = this.room.players.find(p => p.id === gc.judgePlayerId);
-        const sock = io.sockets.sockets.get(simayi.socketId);
+        const sock = getSock(simayi.socketId);
         if (sock) sock.emit('askGuicai', {
           flip: { rank: gc.flip.rank, suit: gc.flip.suit },
           judgeName: judgeP?.username, jcardName: gc.jcard.name,
@@ -1215,7 +1337,7 @@ class Game {
       io.to(this.room.code).emit('timerTick', this.timer);
       if (this.timer <= 0) { clearInterval(this.ganglieTimer); this.resolveGanglie(source.id, 'discard'); }
     }, 1000);
-    const sock = io.sockets.sockets.get(source.socketId);
+    const sock = getSock(source.socketId);
     if (sock) sock.emit('askGanglie', { victimName: victim.username, tag });
     this.broadcast();
   }
@@ -1241,6 +1363,10 @@ class Game {
       this.addLog(vName, `🔥 [ความแน่วแน่/刚烈] ${source.username} เลือกรับ 1 ดาเมจ`);
       this.dealDamage(source, 1, victim || null);
     }
+    // ผู้ก่อ (ผู้เล่นปัจจุบัน) ตายจาก 刚烈 ขณะไม่มีอะไรค้าง → ส่งตาต่อ (ไม่งั้นตาค้าง)
+    const cur = this.room.players[this.currentPlayer];
+    if (this.room.state === 'playing' && cur && cur.hp <= 0 && cur.id === source.id && !this.dyingPlayerId
+        && !this.pending && !this.groupQueue && !this.harvest && !this.cardPick) return this.finishTurn(), { ok: true };
     this.broadcast();
     return { ok: true };
   }
@@ -1349,7 +1475,8 @@ class Game {
       this.awaitingDraw = false;
       let got = 0;
       for (const tid of tuxiTargets) {
-        const t = players.find(p => p.id === tid && p.hp > 0 && p.id !== cur.id && p.hand.length > 0);
+        // คำอธิบายไม่ได้ระบุ "ตัวละครอื่น" → เลือกตัวเองได้ (ริบไพ่ในมือตัวเองกลับเข้ามือ)
+        const t = players.find(p => p.id === tid && p.hp > 0 && p.hand.length > 0);
         if (!t) continue;
         const loot = this.takeOneCard(t, true);
         if (loot) { cur.hand.push(loot); got++; this.addLog(cur.username, `🥷 [การโจมตีฉับพลัน/突袭] ริบไพ่จาก ${t.username}`); }
@@ -1438,8 +1565,19 @@ class Game {
       return { ok: false, msg: `การ์ด${card.name} เป็นการ์ดหน่วงเวลา (ต้องมีเฟสตัดสิน) — ฉบับนี้ยังไม่รองรับ` };
     const target = players.find(p => p.id === targetId);
 
+    // ขโมย/เผาสะพานใส่คนที่มีไพ่ตัดสินค้าง = อาจเป็นการช่วย → ไม่นับว่าประสงค์ร้าย
+    const _helpful = ['Steal', 'Burning Bridges'].includes(effCard.name) && (target?.judgments || []).length > 0;
     const result = this.applyCard(cur, effCard, target, extra);
     if (!result.ok) return result;
+    // การ์ดที่เล็งเป้าหมายแบบประสงค์ร้าย → บันทึกไว้ให้บอทเดาฝ่าย
+    if (target && !_helpful && ['Steal', 'Burning Bridges', 'Overindulgence', 'Duel', 'Attack'].includes(effCard.name))
+      this.noteHarm(cur, target, ['Attack', 'Duel'].includes(effCard.name) ? 0.3 : 0.6);
+    // อนิเมชั่น: อุปกรณ์ → เข้าช่องตัวเอง, การ์ดหน่วงเวลา → ช่องตัดสินของเป้าหมาย, อื่นๆ → กลางโต๊ะ
+    {
+      const isEquip = ['weapon', 'armor', 'mount'].includes(card.type);
+      const kind = isEquip ? 'equip' : (result.noDiscard ? 'judge' : 'play');
+      this.emitMotion(cur, card, kind, kind === 'judge' ? (target ? target.id : cur.id) : (target ? target.id : null));
+    }
 
     // ── ป้ายบอกเป้าหมายชั่วคราว (แสดงบนหัวเป้าหมาย) — บุกทะลวง/ฝนลูกธนู ไม่รวมตัวเอง ──
     let _targetIds = [];
@@ -1506,7 +1644,7 @@ class Game {
       if (extraPool.length) {
         // เก็บสถานะรอการเลือก (ถ้า timer หมด จะโจมตีเฉพาะเป้าหมายหลัก)
         this.halberPending = { from, target, dmg, color, dodgesNeeded, card: srcCard, extraPool, timer: null };
-        const sock = io.sockets.sockets.get(from.socketId);
+        const sock = getSock(from.socketId);
         if (sock) sock.emit('askHalberd', {
           targetName: target.username,
           extra: extraPool.map(p => ({ id: p.id, name: p.username, hp: p.hp })),
@@ -1595,28 +1733,21 @@ class Game {
         return { ok: true, logMsg: null };
       }
 
-      case 'Steal': {
+      // ขโมย / เผาสะพาน: ใช้กับตัวละครอื่นในระยะ 1 เท่านั้น (ใช้กับตัวเองไม่ได้)
+      case 'Steal':
+      case 'Burning Bridges': {
+        const isSteal = card.name === 'Steal';
         if (!target) return { ok: false, msg: 'ต้องเลือกเป้าหมาย' };
         if (target.id === from.id) return { ok: false, msg: 'เลือกตัวเองไม่ได้' };
-        if (CHAR_PASSIVES[target.character]?.immuneToSteal)
+        if (target.hp <= 0) return { ok: false, msg: 'เป้าหมายถูกกำจัดแล้ว' };
+        if (isSteal && CHAR_PASSIVES[target.character]?.immuneToSteal)
           return { ok: false, msg: `${target.username} ไม่สามารถถูกขโมยได้ (ลู่ซุ่น: ศักดิ์ศรีแห่งน้ำ)` };
         if (!CHAR_PASSIVES[from.character]?.unlimitedTrickRange && this.distance(from, target) > 1)
           return { ok: false, msg: 'เป้าหมายต้องอยู่ในระยะ 1' };
-        if (target.hand.length === 0 && !Object.values(target.equipment).some(Boolean))
+        if (this._targetCardOptions(target).length === 0)
           return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
-        const doSteal = () => this._promptTakeCard(from, target, 'steal');
-        return this.maybeNegate(from, target, 'Steal', doSteal);
-      }
-
-      case 'Burning Bridges': {
-        if (!target) return { ok: false, msg: 'ต้องเลือกเป้าหมาย' };
-        if (target.id === from.id) return { ok: false, msg: 'เลือกตัวเองไม่ได้' };
-        if (!CHAR_PASSIVES[from.character]?.unlimitedTrickRange && this.distance(from, target) > 1)
-          return { ok: false, msg: 'เป้าหมายต้องอยู่ในระยะ 1' };
-        if (target.hand.length === 0 && !Object.values(target.equipment).some(Boolean))
-          return { ok: false, msg: 'เป้าหมายไม่มีการ์ด/อุปกรณ์' };
-        const doBurn = () => this._promptTakeCard(from, target, 'burn');
-        return this.maybeNegate(from, target, 'Burning Bridges', doBurn);
+        const doIt = () => this._promptTakeCard(from, target, isSteal ? 'steal' : 'burn');
+        return this.maybeNegate(from, target, card.name, doIt);
       }
 
       case 'Borrowed Sword': {
@@ -1769,7 +1900,7 @@ class Game {
       io.to(this.room.code).emit('timerTick', this.timer);
       if (this.timer <= 0) { clearInterval(this.cardPickTimer); this.resolveTakeCard(from.id, options[0].value); }
     }, 1000);
-    const sock = io.sockets.sockets.get(from.socketId);
+    const sock = getSock(from.socketId);
     if (sock) sock.emit('askTakeCard', {
       mode, targetName: target.username,
       options: options.map(o => ({ value: o.value, label: o.label })),
@@ -1839,7 +1970,7 @@ class Game {
         io.to(this.room.code).emit('timerTick', this.timer);
         if (this.timer <= 0) { clearInterval(this.harvestTimer); this.autoHarvestPick(); }
       }, 1000);
-      const sock = io.sockets.sockets.get(player.socketId);
+      const sock = getSock(player.socketId);
       if (sock) sock.emit('askHarvest', {});
       this.broadcast();
       return;
@@ -1958,7 +2089,7 @@ class Game {
       : type === 'negate'   ? `${source.username} ใช้ ${cardName} ใส่คุณ! เล่น [ขัดขวาง] เพื่อยกเลิก หรือปล่อยผ่าน`
       : `${source.username} ใช้ ${cardName} ใส่คุณ! เล่นการ์ดหลบหลีก หรือรับความเสียหาย`;
 
-    const sock = io.sockets.sockets.get(responder.socketId);
+    const sock = getSock(responder.socketId);
     if (sock) sock.emit('awaitResponse', {
       type, need, cardName, alsoAccept, canNegate,
       dodgesNeeded: payload.dodgesNeeded || 1,
@@ -1986,6 +2117,7 @@ class Game {
     const handBefore = responder.hand.length;
     const discarded = responder.hand.splice(ci, 1)[0];
     this.discardPile.push(discarded);
+    this.emitMotion(responder, discarded, 'discard');
     this.addLog(responder.username, `🌀 [เบี่ยงเบน/流离] ทิ้ง "${discarded.name}" — โยกการโจมตีไปที่ ${newTarget.username}`);
     clearInterval(this.respTimer);
     this.pending = null;
@@ -2025,6 +2157,9 @@ class Game {
       this.groupCard = null;
       this.groupPayload = null;
       if (this.room.state !== 'ended') {
+        // ผู้เล่นปัจจุบันตายระหว่างการ์ดหมู่ (เช่น โดน 刚烈 สวนกลับ) → ส่งตาต่อ
+        const cur = this.room.players[this.currentPlayer];
+        if (!cur || cur.hp <= 0) return this.finishTurn();
         this.phase = 'play';
         this.startTimer();
         this.broadcast();
@@ -2053,6 +2188,7 @@ class Game {
       if (ni >= 0) {
         const used = responder.hand.splice(ni, 1)[0];
         this.discardPile.push(used);
+        this.emitMotion(responder, used, 'play');
         this.addLog(responder.username, `🚫 ขัดขวาง (无懈可击) — ยกเลิกผลของ ${cardName}!`);
         this.pending = null;
         return this._continueAfterResponse(), { ok: true };
@@ -2067,6 +2203,7 @@ class Game {
         if (ni >= 0) {
           const u = responder.hand.splice(ni, 1)[0];
           this.discardPile.push(u);
+          this.emitMotion(responder, u, 'play');
           negated = true;
           this.addLog(responder.username, `🚫 ขัดขวาง — ยกเลิกผลของ ${cardName}!`);
         }
@@ -2095,6 +2232,7 @@ class Game {
         if (cardCounts) {
           usedCard = responder.hand.splice(idx, 1)[0];
           this.discardPile.push(usedCard);
+          this.emitMotion(responder, usedCard, 'play');
           defended = true;
           this.addLog(responder.username, type === 'dodge' ? `🛡️ หลบหลีกสำเร็จ (${usedCard.name})` : `⚔️ เล่น ${usedCard.name}`);
         }
@@ -2235,7 +2373,7 @@ class Game {
       io.to(this.room.code).emit('timerTick', this.timer);
       if (this.timer <= 0) { clearInterval(this.rockAxeTimer); this.resolveRockAxe(source.id, 'skip'); }
     }, 1000);
-    const sock = io.sockets.sockets.get(source.socketId);
+    const sock = getSock(source.socketId);
     if (sock) sock.emit('askRockAxe', { targetName: responder.username });
     this.broadcast();
   }
@@ -2267,6 +2405,7 @@ class Game {
   //   ctx = { card, isAttack, color } — บริบทแหล่งที่มา (ใช้กับทักษะ trigger ตอนรับดาเมจ)
   dealDamage(player, amount, source, ctx = {}) {
     player.hp -= amount;
+    this.noteHarm(source, player, amount);
     this.addLog('ระบบ', `💔 ${player.username} เสีย ${amount} พลังชีวิต (เหลือ ${Math.max(0,player.hp)})`);
     // ทริกเกอร์ทักษะ "หลังรับดาเมจ" (เล่ห์กล/การโต้กลับ/มรดก/ความแน่วแน่ ฯลฯ)
     // ต้องทำงานแม้ถูกตีจนใกล้ตาย — เช่น เฉาเชาริบการ์ดที่ก่อดาเมจถึงจะใกล้ตายก็ตาม
@@ -2317,7 +2456,7 @@ class Game {
           io.to(this.room.code).emit('timerTick', this.timer);
           if (this.timer <= 0) { clearInterval(this.dyingTimer); this.declinePeach(saver.id); }
         }, 1000);
-        const sock = io.sockets.sockets.get(saver.socketId);
+        const sock = getSock(saver.socketId);
         if (sock) sock.emit('askPeach', {
           forId: d.playerId,
           msg: saver.id === d.playerId
@@ -2348,6 +2487,7 @@ class Game {
     const used = saver.hand.splice(idx, 1)[0];
     this.discardPile.push(used);
     const dying = this.room.players.find(p => p.id === d.playerId);
+    this.emitMotion(saver, used, 'play', dying?.id || null);
     // ซุนฉวน (孙权) — Jiu Yuan (救援): ฝ่ายง่อก๊กใช้ [เพอช] กับซุนฉวน → ฟื้นเพิ่ม 1
     let amt = 1;
     if (CHAR_PASSIVES[dying.character]?.jiuyuan && saver.id !== dying.id && kingdomOf(saver.character) === 'WU') amt = 2;
@@ -2491,7 +2631,7 @@ class Game {
       this.phase = 'discard';
       this.awaitingDiscard = { playerId: cur.id, need };
       this.addLog(cur.username, `ต้องทิ้งการ์ด ${need} ใบ (เก็บได้ ${handLimit} = พลังชีวิต) — เลือกใบที่จะทิ้ง`);
-      const sock = io.sockets.sockets.get(cur.socketId);
+      const sock = getSock(cur.socketId);
       if (sock) sock.emit('askDiscard', { need, handLimit });
       this.startTimer();
       this.broadcast();
@@ -2516,6 +2656,7 @@ class Game {
       player.hand.splice(player.hand.indexOf(c), 1);
       this.discardPile.push(c);
     });
+    this.emitMotion(player, toDiscard, 'discard');
     this.addLog(player.username, `ทิ้งการ์ด ${need} ใบ`);
     this.awaitingDiscard = null;
     this.finishTurn();
@@ -2529,10 +2670,14 @@ class Game {
     if (!player) { this.awaitingDiscard = null; return this.finishTurn(); }
     const need = this.awaitingDiscard.need;
     let discarded = 0;
+    const gone = [];
     while (discarded < need && player.hand.length > 0) {
-      this.discardPile.push(player.hand.pop());
+      const c = player.hand.pop();
+      this.discardPile.push(c);
+      gone.push(c);
       discarded++;
     }
+    this.emitMotion(player, gone, 'discard');
     if (discarded > 0) this.addLog(player.username, `ทิ้งการ์ด ${discarded} ใบ (อัตโนมัติ — หมดเวลา)`);
     this.awaitingDiscard = null;
     this.finishTurn();
@@ -2614,7 +2759,7 @@ class Game {
           io.to(this.room.code).emit('timerTick', this.timer);
           if (this.timer <= 0) { clearInterval(this.xiaoguoTimer); this.useXiaoguo(yuejin.id, null); }
         }, 1000);
-        const sock = io.sockets.sockets.get(yuejin.socketId);
+        const sock = getSock(yuejin.socketId);
         if (sock) sock.emit('askXiaoguo', { targetName: target.username });
         this.broadcast();
         return;
@@ -2664,7 +2809,7 @@ class Game {
       io.to(this.room.code).emit('timerTick', this.timer);
       if (this.timer <= 0) { clearInterval(this.xiaoguoTimer); this.respondXiaoguo(target.id, null); }
     }, 1000);
-    const sock = io.sockets.sockets.get(target.socketId);
+    const sock = getSock(target.socketId);
     if (sock) sock.emit('askXiaoguoRespond', { yuejinName: yuejin.username });
     this.broadcast();
     return { ok: true };
@@ -2699,11 +2844,11 @@ class Game {
 // ─── ส่งสถานะห้องให้ผู้เล่นทุกคน (เฉพาะตัว) + ผู้ชม ─────────────────────────────
 function broadcastRoom(room) {
   room.players.forEach(p => {
-    const sock = io.sockets.sockets.get(p.socketId);
+    const sock = getSock(p.socketId);
     if (sock) sock.emit('roomUpdate', room.publicState(p.id));
   });
   room.spectators.forEach(sid => {
-    const sock = io.sockets.sockets.get(sid);
+    const sock = getSock(sid);
     if (sock) sock.emit('roomUpdate', room.publicState(null));
   });
 }
@@ -2720,23 +2865,27 @@ function leaveRoom(roomCode, playerId) {
   if (room.state === 'playing') {
     leaving.connected = false;
     io.to(roomCode).emit('playerDisconnected', { username: leaving.username });
+    io.to(roomCode).emit('camState', { playerId, on: false });
     broadcastRoom(room);
+    checkAbandoned(room);
     return;
   }
 
   // อยู่ในล็อบบี้: ลบออกจริง
   room.removePlayer(playerId);
+  io.to(roomCode).emit('camState', { playerId, on: false });
 
-  if (room.players.length === 0) {
-    rooms.delete(roomCode);   // ห้องว่าง → ลบทิ้ง
+  if (humansIn(room).length === 0) {
+    destroyRoom(room);        // เหลือแต่บอท/ห้องว่าง → ลบทิ้ง
     return;
   }
-  // โอน Host ให้ผู้เล่นคนแรกที่เหลือ
+  // โอน Host ให้ผู้เล่นจริงคนแรกที่เหลือ (ไม่โอนให้บอท)
   if (wasHost) {
-    room.hostId = room.players[0].id;
+    const nh = humansIn(room)[0];
+    room.hostId = nh.id;
     io.to(roomCode).emit('chatMessage', {
       from: 'ระบบ',
-      message: `👑 ${room.players[0].username} กลายเป็น Host คนใหม่`,
+      message: `👑 ${nh.username} กลายเป็น Host คนใหม่`,
       time: Date.now(),
     });
   }
@@ -2747,7 +2896,7 @@ function leaveRoom(roomCode, playerId) {
 function detachSocket(socketId) {
   const info = sockets.get(socketId);
   if (info) {
-    const sock = io.sockets.sockets.get(socketId);
+    const sock = getSock(socketId);
     if (sock) sock.leave(info.roomCode);
     leaveRoom(info.roomCode, info.playerId);
     sockets.delete(socketId);
@@ -2771,6 +2920,7 @@ io.on('connection', (socket) => {
       privateRoom: !!settings.privateRoom,
       voiceChat: !!settings.voiceChat,
       textChat: settings.textChat !== false,
+      botLevel: ['easy', 'normal', 'hard'].includes(settings.botLevel) ? settings.botLevel : 'normal',
     });
     room.addPlayer(playerId, socket.id, username);
     rooms.set(room.code, room);
@@ -2778,6 +2928,16 @@ io.on('connection', (socket) => {
 
     socket.join(room.code);
     socket.emit('roomCreated', { roomCode: room.code, playerId });
+
+    // โหมดเล่นคนเดียว: เติมบอทให้เต็มห้อง แล้วเริ่มเกม (สุ่มโรล) ทันที
+    const soloBots = Math.min(9, Math.max(0, Number(settings.soloBots) || 0));
+    if (soloBots > 0) {
+      for (let i = 0; i < soloBots; i++) addBotToRoom(room);
+      room.findPlayer(playerId).ready = true;
+      room.startDraft();
+      broadcastRoom(room);
+      return;
+    }
     socket.emit('roomUpdate', room.publicState(playerId));
   });
 
@@ -2788,7 +2948,8 @@ io.on('connection', (socket) => {
 
     // Reconnect — เข้าก่อนตรวจรหัสผ่าน/ห้องเต็ม
     const existing = existingId && room.findPlayer(existingId);
-    if (existing) {
+    if (existing && !existing.isAI) {
+      clearTimeout(room.emptyTimer);
       existing.socketId = socket.id;
       existing.connected = true;
       sockets.set(socket.id, { playerId: existing.id, roomCode: room.code, username: existing.username });
@@ -2819,7 +2980,7 @@ io.on('connection', (socket) => {
   socket.on('leaveRoom', () => {
     const info = sockets.get(socket.id);
     if (!info) return;
-    const sock = io.sockets.sockets.get(socket.id);
+    const sock = getSock(socket.id);
     if (sock) sock.leave(info.roomCode);
     leaveRoom(info.roomCode, info.playerId);
     sockets.delete(socket.id);
@@ -3026,6 +3187,16 @@ io.on('connection', (socket) => {
     room.game.respondXiaoguo(info.playerId, equipSlot || null);
   });
 
+  // นางกาน Shen Zhi (神智): เลือกตัวละครอื่นที่จะให้จั่ว
+  socket.on('shenzhiPick', ({ targetId } = {}) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || !room.game) return;
+    const result = room.game.resolveShenzhi(info.playerId, targetId);
+    if (result && !result.ok && result.msg) socket.emit('error', result.msg);
+  });
+
   // ทักษะเจ้านาย: ฝ่ายเดียวกันเสนอเล่นการ์ดแทน (Hu Jia / Ji Jiang)
   socket.on('lordAssist', ({ cardId }) => {
     const info = sockets.get(socket.id);
@@ -3082,6 +3253,51 @@ io.on('connection', (socket) => {
     });
   });
 
+  // ─── บอท: Host เพิ่มบอท 1 ตัว / เติมบอทจนเต็มห้อง ─────────────────────────
+  socket.on('addBot', ({ fill } = {}) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room) return;
+    if (room.hostId !== info.playerId) return socket.emit('error', 'เฉพาะ Host เท่านั้นที่เพิ่มบอทได้');
+    if (room.state !== 'lobby') return socket.emit('error', 'เพิ่มบอทได้เฉพาะในล็อบบี้');
+    if (room.players.length >= room.settings.playerLimit) return socket.emit('error', 'ห้องเต็มแล้ว');
+    let added = 0;
+    do { if (addBotToRoom(room)) added++; else break; }
+    while (fill && room.players.length < room.settings.playerLimit);
+    if (added) io.to(room.code).emit('chatMessage', { from: 'ระบบ', message: `🤖 เพิ่มบอท ${added} ตัว`, time: Date.now() });
+    broadcastRoom(room);
+  });
+
+  // Host ปรับความเก่งของบอทในล็อบบี้
+  socket.on('setBotLevel', ({ level } = {}) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    const room = rooms.get(info.roomCode);
+    if (!room || room.hostId !== info.playerId) return;
+    if (!['easy', 'normal', 'hard'].includes(level)) return;
+    room.settings.botLevel = level;
+    broadcastRoom(room);
+  });
+
+  // ─── กล้อง (WebRTC): เซิร์ฟเวอร์ทำหน้าที่ส่งต่อสัญญาณระหว่างผู้เล่นในห้องเดียวกันเท่านั้น ──
+  //   ภาพ/เสียงวิ่งตรงระหว่างเบราว์เซอร์ (peer-to-peer) ไม่ผ่านเซิร์ฟเวอร์
+  socket.on('camState', ({ on } = {}) => {
+    const info = sockets.get(socket.id);
+    if (!info) return;
+    socket.to(info.roomCode).emit('camState', { playerId: info.playerId, on: !!on });
+  });
+
+  socket.on('rtcSignal', ({ to, data } = {}) => {
+    const info = sockets.get(socket.id);
+    if (!info || !to || !data) return;
+    const room = rooms.get(info.roomCode);
+    const target = room && room.findPlayer(to);
+    if (!target || target.isAI || !target.connected) return;
+    const ts = io.sockets.sockets.get(target.socketId);
+    if (ts) ts.emit('rtcSignal', { from: info.playerId, data });
+  });
+
   socket.on('kickPlayer', ({ targetId }) => {
     const info = sockets.get(socket.id);
     if (!info) return;
@@ -3089,7 +3305,13 @@ io.on('connection', (socket) => {
     if (!room || room.hostId !== info.playerId) return;
     const target = room.findPlayer(targetId);
     if (!target) return;
-    const targetSock = io.sockets.sockets.get(target.socketId);
+    if (room.state !== 'lobby' && target.isAI) return socket.emit('error', 'ลบบอทได้เฉพาะในล็อบบี้');
+    if (target.isAI) {
+      removeBot(target.socketId);
+      room.removePlayer(targetId);
+      return broadcastRoom(room);
+    }
+    const targetSock = getSock(target.socketId);
     if (targetSock) {
       targetSock.emit('kicked', { reason: 'ถูก Host เตะออกจากห้อง' });
       targetSock.leave(info.roomCode);
@@ -3108,6 +3330,7 @@ io.on('connection', (socket) => {
     const player = room.findPlayer(info.playerId);
     if (!player) return;
     player.connected = false;
+    io.to(info.roomCode).emit('camState', { playerId: info.playerId, on: false });
 
     if (room.state === 'lobby') {
       // ในล็อบบี้: ให้เวลา reconnect 25 วินาที แล้วค่อยลบ + โอน Host
@@ -3121,9 +3344,21 @@ io.on('connection', (socket) => {
       // ระหว่างเล่น: คงผู้เล่นไว้เพื่อ reconnect, แจ้งคนอื่น
       io.to(info.roomCode).emit('playerDisconnected', { username: player.username });
       broadcastRoom(room);
+      checkAbandoned(room);
     }
     console.log(`[-] ${socket.id} disconnected`);
   });
+});
+
+// ─── ICE servers สำหรับกล้อง (WebRTC) ────────────────────────────────────────
+//   ค่าเริ่มต้น = STUN สาธารณะ; ถ้าผู้เล่นบางเครือข่ายต่อกันไม่ติด ให้ตั้ง TURN ผ่าน env:
+//   TURN_URL=turn:host:3478  TURN_USER=...  TURN_PASS=...
+app.get('/api/ice', (_, res) => {
+  const list = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+  if (process.env.TURN_URL) {
+    list.push({ urls: process.env.TURN_URL.split(','), username: process.env.TURN_USER || '', credential: process.env.TURN_PASS || '' });
+  }
+  res.json(list);
 });
 
 // ─── Public Room List ─────────────────────────────────────────────────────────
@@ -3154,4 +3389,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { Room, Game, CARD_TEMPLATES, CHARACTERS, CHAR_PASSIVES, ACTIVE_SKILLS };
+module.exports = { Room, Game, CARD_TEMPLATES, CHARACTERS, CHAR_PASSIVES, ACTIVE_SKILLS, addBotToRoom, botSockets, rooms };

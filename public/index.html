@@ -32,6 +32,7 @@
   <div class="menu-container gold-frame" style="padding:24px 32px">
     <button class="menu-btn primary" id="btn-play-online">⚔️ เล่นออนไลน์</button>
     <button class="menu-btn" id="btn-create-room">🏠 สร้างห้อง</button>
+    <button class="menu-btn" id="btn-solo">🤖 เล่นคนเดียวกับบอท</button>
     <button class="menu-btn" id="btn-guide">📘 คู่มือการเล่น</button>
     <button class="menu-btn" id="btn-encyclopedia">📖 คลังข้อมูล</button>
     <button class="menu-btn" onclick="window.location.href='#'" style="opacity:0.5;cursor:not-allowed">👥 เพื่อน (เร็วๆ นี้)</button>
@@ -40,6 +41,57 @@
   <div style="margin-top:20px;color:var(--text-dim);font-size:0.75rem;text-align:center">
     Server: <span id="server-status" style="color:#27ae60">● ออนไลน์</span>
     &nbsp;&nbsp;v1.0.0
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- MODAL: SOLO VS BOTS -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div id="modal-solo" class="modal-overlay">
+  <div class="modal gold-frame">
+    <h2>🤖 เล่นคนเดียวกับบอท</h2>
+    <form id="form-solo">
+      <div class="form-group">
+        <label>ชื่อผู้เล่น *</label>
+        <input id="solo-username" maxlength="20" placeholder="ใส่ชื่อของคุณ" required>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>จำนวนบอท</label>
+          <select id="solo-bots">
+            <option value="1">1 ตัว (ดวล 1:1)</option>
+            <option value="2">2 ตัว</option>
+            <option value="3" selected>3 ตัว (4 คน)</option>
+            <option value="4">4 ตัว</option>
+            <option value="5">5 ตัว</option>
+            <option value="7">7 ตัว (8 คน)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>ตัวจับเวลา</label>
+          <select id="solo-timer">
+            <option value="60">60 วินาที</option>
+            <option value="120">120 วินาที</option>
+            <option value="0" selected>ไม่มีเวลา</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+          <label>ความเก่งของบอท</label>
+          <select id="solo-bot-level">
+            <option value="easy">😊 ง่าย — เล่นมั่ว ลืมหลบบ้าง</option>
+            <option value="normal" selected>⚔️ ปกติ</option>
+            <option value="hard">🔥 ยาก — ใช้ทักษะ คิดแม่นขึ้น</option>
+          </select>
+        </div>
+      <div style="color:var(--text-dim);font-size:0.78rem;line-height:1.5;margin:4px 0 10px">
+        บอทจะสุ่มบทบาท เลือกตัวละคร และเล่นเองอัตโนมัติ — ห้องนี้เป็นห้องส่วนตัว ไม่มีใครเข้ามาได้
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-cancel" data-close-modal="modal-solo">ยกเลิก</button>
+        <button type="submit" class="btn btn-confirm">▶ เริ่มเล่น</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -87,6 +139,14 @@
           </select>
         </div>
       </div>
+      <div class="form-group">
+          <label>ความเก่งของบอท</label>
+          <select id="create-bot-level">
+            <option value="easy">😊 ง่าย — เล่นมั่ว ลืมหลบบ้าง</option>
+            <option value="normal" selected>⚔️ ปกติ</option>
+            <option value="hard">🔥 ยาก — ใช้ทักษะ คิดแม่นขึ้น</option>
+          </select>
+        </div>
       <div class="toggle-row">
         <div><div class="toggle-label">อนุญาตผู้ชม</div><div class="toggle-desc">ให้คนอื่นดูเกมได้</div></div>
         <label class="toggle-switch"><input type="checkbox" id="allow-spectators" checked><span class="toggle-slider"></span></label>
@@ -206,6 +266,14 @@
     <div class="lobby-actions">
       <button class="btn btn-cancel" id="btn-leave-lobby">← ออก</button>
       <button class="btn btn-cancel" id="btn-guide-lobby" title="คู่มือการเล่นและกฎกติกา">📘 คู่มือ</button>
+      <button class="btn btn-cancel btn-cam-toggle" id="btn-cam-lobby" title="เปิด/ปิดกล้องให้เพื่อนในห้องเห็นหน้า">📷 เปิดกล้อง</button>
+      <button class="btn btn-cancel" id="btn-add-bot" style="display:none" title="เพิ่มบอท 1 ตัว">🤖 + บอท</button>
+      <button class="btn btn-cancel" id="btn-fill-bots" style="display:none" title="เติมบอทจนเต็มห้อง">🤖 เติมให้เต็ม</button>
+      <select id="lobby-bot-level" class="lobby-bot-level" style="display:none" title="ความเก่งของบอท (Host)">
+        <option value="easy">😊 บอทง่าย</option>
+        <option value="normal">⚔️ บอทปกติ</option>
+        <option value="hard">🔥 บอทยาก</option>
+      </select>
       <button class="btn btn-confirm" id="btn-ready" style="flex:1">✓ พร้อมแล้ว</button>
       <button class="btn btn-confirm" id="btn-start" style="background:linear-gradient(135deg,#27ae60,#2ecc71);border-color:#27ae60;display:none">▶ เริ่มเกม</button>
     </div>
@@ -354,6 +422,7 @@
 <!-- ══════════════════════════════════════════════════════════════════════ -->
 <div id="screen-game" class="screen">
   <button id="btn-guide-game" class="guide-fab" title="คู่มือการเล่นและกฎกติกา">📘</button>
+  <button id="btn-cam-game" class="guide-fab cam-fab btn-cam-toggle" data-compact="1" title="เปิดกล้อง">📷</button>
   <div class="game-layout">
     <!-- Main game area -->
     <div class="game-center">
@@ -448,5 +517,6 @@
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/data.js"></script>
 <script src="/js/game.js"></script>
+<script src="/js/camera.js"></script>
 </body>
 </html>

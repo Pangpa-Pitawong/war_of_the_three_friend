@@ -334,7 +334,9 @@ html, body {
 .ready-badge.ready { background: rgba(39,174,96,0.2); color: #27ae60; border: 1px solid #27ae60; }
 .ready-badge.waiting { background: rgba(231,76,60,0.15); color: #e74c3c; border: 1px solid #e74c3c; }
 
-.lobby-actions { display: flex; gap: 12px; padding: 0 16px 16px; }
+.lobby-actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 16px 16px; }
+.lobby-actions .btn { white-space: nowrap; }
+.lobby-actions #btn-ready, .lobby-actions #btn-start { flex: 1 1 140px; }
 
 /* ─── Chat ───────────────────────────────────────────────────────────── */
 .chat-panel { width: 280px; display: flex; flex-direction: column; height: calc(100vh - 40px); }
@@ -1382,3 +1384,82 @@ html, body {
   .guide-tab { font-size: 0.76rem; padding: 6px 10px; }
   .btn-ref-row { flex-direction: column; align-items: flex-start; gap: 6px; }
 }
+
+/* ─── บอท ─────────────────────────────────────────────────────────────── */
+.bot-badge {
+  display: inline-block; font-size: 0.66rem; padding: 1px 6px; border-radius: 8px;
+  background: rgba(52,152,219,0.18); color: #74b9e8; border: 1px solid rgba(52,152,219,0.35);
+  vertical-align: middle;
+}
+
+/* ─── กล้องผู้เล่น (WebRTC) ───────────────────────────────────────────── */
+.cam-slot { display: none; }
+.cam-slot.has-video { display: block; }
+.cam-video { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; background: #000; }
+.cam-video.mirror { transform: scaleX(-1); }
+
+/* ล็อบบี้: วิดีโอแทนที่อวตาร์ทางซ้ายของช่องผู้เล่น */
+.lobby-cam.has-video {
+  width: 64px; height: 48px; flex: 0 0 64px;
+  border-radius: 6px; overflow: hidden; border: 1px solid var(--gold);
+}
+.lobby-cam.has-video + img, .lobby-cam.has-video + .player-avatar { display: none; }
+
+/* ในเกม: ฟองวิดีโอกลมมุมบนซ้ายของรูปตัวละคร */
+.cam-bubble.has-video {
+  position: absolute; top: -10px; left: -12px; z-index: 4;
+  width: calc(var(--pw) * 0.62); height: calc(var(--pw) * 0.62);
+  border-radius: 50%; overflow: hidden;
+  border: 2px solid var(--gold); box-shadow: 0 0 10px rgba(0,0,0,0.7);
+}
+.cam-viewer {
+  position: fixed; inset: 0; z-index: 10001; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.72); cursor: zoom-out;
+}
+.cam-viewer-box { width: min(560px, 92vw); border: 2px solid var(--gold); border-radius: 12px; overflow: hidden; background: #000; }
+.cam-viewer-box video { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; }
+.cam-viewer-box video.mirror { transform: scaleX(-1); }
+.cam-viewer-name { padding: 8px 12px; color: var(--gold-light); font-size: 0.85rem; background: rgba(0,0,0,0.6); }
+
+.cam-fab { right: auto; left: 14px; }
+.cam-fab.cam-active, .btn-cam-toggle.cam-active {
+  border-color: #27ae60; color: #b8f5c9;
+  background: linear-gradient(135deg, rgba(39,174,96,0.45), rgba(20,90,50,0.7));
+  box-shadow: 0 0 14px rgba(39,174,96,0.55);
+}
+
+/* ─── อนิเมชั่นการ์ดเคลื่อนที่ (เล่นจากมือ / ทิ้ง / ติดตั้ง / ช่องตัดสิน / มอบให้) ── */
+.card-fly {
+  position: fixed; z-index: 8500; pointer-events: none;
+  transform-origin: 0 0;
+  border-radius: 7px; overflow: hidden;
+  background: linear-gradient(160deg, #3a2a14, #1a120a);
+  border: 2px solid var(--gold);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.65), 0 0 18px rgba(201,168,76,0.45);
+  will-change: transform, opacity;
+}
+.card-fly img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card-fly-label {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 2px 3px; font-size: 0.6rem; font-weight: 700; text-align: center;
+  color: #fff; background: rgba(0,0,0,0.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.card-fly.kind-discard { border-color: rgba(201,168,76,0.5); box-shadow: 0 6px 16px rgba(0,0,0,0.6); }
+.card-fly.kind-discard img { filter: brightness(0.8); }
+.card-fly.kind-equip { border-color: #f39c12; box-shadow: 0 0 20px rgba(243,156,18,0.55); }
+.card-fly.kind-judge { border-color: #9b59b6; box-shadow: 0 0 20px rgba(155,89,182,0.6); }
+.card-fly.kind-give  { border-color: #27ae60; box-shadow: 0 0 20px rgba(39,174,96,0.55); }
+
+#discard-pile.pile-bump { animation: pile-bump 0.26s ease-out; }
+@keyframes pile-bump { 0% { transform: scale(1); } 45% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .card-fly { display: none; }
+}
+
+/* ตัวเลือกความเก่งของบอทในล็อบบี้ */
+.lobby-bot-level {
+  padding: 8px 10px; border-radius: 6px; font-family: inherit; font-size: 0.85rem;
+  background: rgba(0,0,0,0.45); color: var(--text); border: 1px solid var(--border); cursor: pointer;
+}
+.lobby-bot-level:disabled { opacity: 0.75; cursor: default; }

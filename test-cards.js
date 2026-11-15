@@ -356,5 +356,44 @@ console.log('\n[20] Nio Shield — auto-block black Attack');
   check('no damage (auto-blocked), no pending', g.pending === null && p[1].hp === 4);
 }
 
+// ─── Test 21: Steal / Burning Bridges cannot target self ───
+console.log('\n[21] Steal/Burning Bridges — cannot target self');
+{
+  const over = card('Overindulgence', 'stratagem', '♠', 3);
+  const bow = card('Kirin Bow', 'weapon', '♥', 13, { range: 5 });
+  const p = [
+    makePlayer(0, 'caocao', { hand: [card('Burning Bridges', 'stratagem'), card('Steal', 'stratagem')], judgments: [over],
+      equipment: { weapon: bow, armor: null, atkMount: null, defMount: null } }),
+    makePlayer(1, 'zhangfei'),
+  ];
+  const g = makeGame(p);
+  check('burn on self rejected', g.playCard('P0', p[0].hand[0].id, 'P0').ok === false);
+  check('steal on self rejected', g.playCard('P0', p[0].hand[1].id, 'P0').ok === false);
+  check('own judgment/equipment untouched', p[0].judgments.length === 1 && p[0].equipment.weapon === bow);
+}
+
+// ─── Test 22: Tu Xi (突袭) / Fan Jian (反间) — skill text has no "other" → self allowed ───
+console.log('\n[22] Tu Xi & Fan Jian — may choose self');
+{
+  const mine = card('Peach', 'basic', '♥', 3);
+  const p = [makePlayer(0, 'zhangliao', { hand: [mine] }), makePlayer(1, 'zhangfei', { hand: [card('Dodge', 'basic')] })];
+  const g = makeGame(p);
+  g.phase = 'draw'; g.awaitingDraw = true;
+  const res = g.playerDraw('P0', false, { tuxiTargets: ['P0', 'P1'] });
+  check('tu xi with self accepted', res.ok === true);
+  check('took 1 from P1, own card kept (hand 2)', p[0].hand.length === 2 && p[1].hand.length === 0 && p[0].hand.some(c => c.id === mine.id));
+  g.destroy();
+}
+{
+  const c1 = card('Attack', 'basic', '♠', 5);
+  const p = [makePlayer(0, 'zhouyu', { hand: [c1] }), makePlayer(1, 'zhangfei')];
+  const g = makeGame(p);
+  const res = g.useSkill('P0', { targetId: 'P0' });
+  check('fan jian on self accepted', res.ok === true && g.fanjian && g.fanjian.targetId === 'P0');
+  g.resolveFanjian('P0', '♥');   // ทายผิด (ไพ่เป็น ♠) → รับ 1 ดาเมจ, เก็บไพ่ไว้
+  check('wrong guess → self takes 1 damage, keeps card', p[0].hp === 3 && p[0].hand.some(c => c.id === c1.id));
+  g.destroy();
+}
+
 console.log(`\n──────── ${pass} passed, ${fail} failed ────────`);
 process.exit(fail ? 1 : 0);
