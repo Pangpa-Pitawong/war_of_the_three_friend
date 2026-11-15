@@ -331,6 +331,8 @@ socket.on('askRockAxe', ({ targetName }) => {
   openRockAxeModal(targetName);
 });
 
+socket.on('askShenzhi', ({ players }) => openShenzhiModal(players || []));
+
 // ขโมย (顺手牵羊) / ทำลายสะพาน (过河拆桥): เลือกการ์ดของเป้าหมายที่จะริบ/ทำลาย
 socket.on('askTakeCard', ({ mode, targetName, options }) => {
   openTakeCardModal(mode, targetName, options);
@@ -404,11 +406,13 @@ function renderLobby() {
       const charImg = char ? `<img src="${char.image}" style="width:40px;height:56px;object-fit:cover;border-radius:4px;border:1px solid var(--border)">` : `<div class="player-avatar"><div style="font-size:1.2rem;line-height:44px;text-align:center">⚔️</div></div>`;
       const kingdomBadge = char ? `<span class="kingdom-badge kb-${char.kingdom}" style="font-size:0.65rem">${{ WEI:'เว่ย', SHU:'สู่', WU:'อู๋', QUN:'ไม่สังกัด' }[char.kingdom]}</span>` : '';
       const hostBadge = p.id === room.hostId ? '<span style="color:var(--gold);font-size:0.7rem">👑 HOST</span>' : '';
+      const botBadge = p.isAI ? '<span class="bot-badge">🤖 บอท</span>' : '';
       const dcBadge = !p.connected ? '<span class="ping-badge dc-badge">หลุดการเชื่อมต่อ</span>' : '';
       slot.innerHTML = `
+        <div class="cam-slot lobby-cam" data-cam-slot="${p.id}"></div>
         ${charImg}
         <div class="player-info">
-          <div class="player-name">${p.username} ${hostBadge}</div>
+          <div class="player-name">${escHtml(p.username)} ${hostBadge} ${botBadge}</div>
           <div class="player-meta">${char ? char.nameTh : 'เลือกตัวละครหลังเริ่มเกม'} ${kingdomBadge} ${dcBadge}</div>
         </div>
         <div class="player-status">
@@ -425,10 +429,11 @@ function renderLobby() {
         const kickBtn = document.createElement('button');
         kickBtn.className = 'btn btn-cancel';
         kickBtn.style.cssText = 'padding:2px 8px;font-size:0.7rem;position:absolute;top:4px;right:4px;z-index:2';
-        kickBtn.textContent = '⛔ เตะ';
-        kickBtn.title = `เตะ ${p.username} ออกจากห้อง`;
+        kickBtn.textContent = p.isAI ? '✕ ลบบอท' : '⛔ เตะ';
+        kickBtn.title = p.isAI ? `ลบ ${p.username}` : `เตะ ${p.username} ออกจากห้อง`;
         kickBtn.addEventListener('click', (e) => {
           e.stopPropagation();
+          if (p.isAI) return socket.emit('kickPlayer', { targetId: p.id });
           openPlayConfirm(`เตะ ${p.username} ออกจากห้อง?`, () => {
             socket.emit('kickPlayer', { targetId: p.id });
           }, null);
@@ -449,6 +454,22 @@ function renderLobby() {
   if (btnStart) {
     btnStart.style.display = room.hostId === STATE.playerId ? 'flex' : 'none';
   }
+  // ปุ่มเพิ่มบอท (เฉพาะ Host และห้องยังไม่เต็ม)
+  const canAddBot = room.hostId === STATE.playerId && room.players.length < room.settings.playerLimit;
+  ['btn-add-bot', 'btn-fill-bots'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.style.display = canAddBot ? 'flex' : 'none';
+  });
+  // ตัวเลือกความเก่งของบอท: Host ปรับได้, คนอื่นเห็นเป็นข้อความ (เมื่อมีบอทในห้อง)
+  const lvlSel = document.getElementById('lobby-bot-level');
+  if (lvlSel) {
+    const hasBots = room.players.some(p => p.isAI);
+    const isHost = room.hostId === STATE.playerId;
+    lvlSel.style.display = (isHost || hasBots) ? '' : 'none';
+    lvlSel.disabled = !isHost;
+    lvlSel.value = room.settings.botLevel || 'normal';
+  }
+  window.WTFCam?.attach();
 }
 
 // ─── Character Selection Render ────────────────────────────────────────
@@ -799,7 +820,7 @@ function renderGame() {
       ? `<div class="target-banner">🎯 ${(window.CARD_DATA[ct.cardName]?.nameTh||ct.cardName).split('(')[0].trim()}<span class="tb-src">↪ จาก ${ct.sourceName}</span></div>`
       : '';
 
-    const targetable = STATE.selectingTarget && !isSelf && !dead && isTargetable(STATE.selectedCard, p);
+    const targetable = STATE.selectingTarget && !dead && isTargetable(STATE.selectedCard, p);
 
     const node = document.createElement('div');
     node.className = `player-node ${isCurrent ? 'current-turn' : ''} ${dead ? 'dead' : ''} ${isSelf ? 'self' : ''}`;
@@ -823,10 +844,11 @@ function renderGame() {
           title="${(p.role && p.role!=='?') ? (window.ROLE_DATA[p.role]?.nameTh||'') : 'บทบาทซ่อนอยู่'}"
           onerror="this.style.display='none'">
         <div class="player-hand-count">${p.handCount}</div>
+        <div class="cam-slot cam-bubble" data-cam-slot="${p.id}"></div>
       </div>
       <div class="player-hp-bar"><div class="player-hp-fill ${hpClass}" style="width:${hpPct}%"></div></div>
       <div class="hp-hearts">${hearts}</div>
-      <div class="player-node-name">${p.username}${isSelf?' (คุณ)':''}</div>
+      <div class="player-node-name">${p.isAI ? '🤖 ' : ''}${escHtml(p.username)}${isSelf?' (คุณ)':''}</div>
       <div class="player-hp-text">${p.hp}/${p.maxHp} HP · ${char.nameTh||''}${roleLabel}</div>
       ${isCurrent ? `<div style="font-size:0.65rem;color:var(--gold);text-align:center">⟵ ตานี้</div>` : ''}
       <div class="player-equip">${equips}${judg}</div>
@@ -862,6 +884,7 @@ function renderGame() {
     node.style.left = (cx + radius * Math.cos(angle)) + 'px';
     node.style.top  = (cy + radius * Math.sin(angle)) + 'px';
   });
+  window.WTFCam?.attach();   // ย้ายวิดีโอกล้องเข้าช่องของผู้เล่นแต่ละคน
 
   // Update turn info
   if (game) {
@@ -961,6 +984,8 @@ function renderGame() {
 // เป้าหมายที่เลือกได้ตามชนิดการ์ด + ระยะ
 function isTargetable(card, p) {
   if (!card) return false;
+  // การ์ดทุกใบที่ต้องเลือกเป้าหมาย ใช้กับตัวเองไม่ได้ (โจมตี/ประลอง/ขโมย/เผาสะพาน/ยืมดาบ/เสพสุข)
+  if (p.id === STATE.playerId) return false;
   // การ์ดระยะ 1 (ขโมย/ทำลายสะพาน)
   if (['Steal','Burning Bridges'].includes(card.name)) {
     // หวงเยว่อิง (黄月英) — Qi Cai (奇才): การ์ดยุทธวิธีมีระยะไม่จำกัด
@@ -1031,6 +1056,12 @@ function renderHand(me) {
 
   // อัปเดตชุด id ปัจจุบัน
   STATE._handIds = new Set(hand.map(c => c.id));
+  // จำตำแหน่งการ์ดในมือ — ใช้เป็นจุดเริ่มอนิเมชั่นตอนเล่น/ทิ้ง (แม้การ์ดถูกลบจากมือไปแล้ว)
+  STATE._handRects = STATE._handRects || {};
+  container.querySelectorAll('.hand-card').forEach(d => {
+    const r = d.getBoundingClientRect();
+    if (r.width) STATE._handRects[d.dataset.cardid] = { left: r.left, top: r.top, width: r.width, height: r.height };
+  });
 
   // เล่นอนิเมชั่นจั่วไพ่จากกองมาที่มือ (เฉพาะใบที่เพิ่งได้มา, ไล่ทีละใบ)
   if (newDivs.length) {
@@ -1077,6 +1108,85 @@ function animateDrawToHand(targetEl, delay = 0) {
     setTimeout(() => targetEl.classList.remove('just-drawn'), 450);
   }, delay + FLIGHT);
 }
+
+// ─── อนิเมชั่นการ์ดเคลื่อนที่: เล่นจากมือ / ทิ้งลงกอง / ติดตั้ง / วางช่องตัดสิน / มอบให้ ──
+//   ทุกคนเห็น: ของเราบินออกจากมือ, ของคนอื่นบินออกจากที่นั่งของเขา
+function seatRect(playerId) {
+  const node = document.querySelector(`.player-node[data-playerid="${playerId}"]`);
+  const el = node?.querySelector('.player-portrait') || node;
+  const r = el?.getBoundingClientRect();
+  return r && r.width ? r : null;
+}
+function cardFaceHTML(card) {
+  const cd = window.CARD_DATA[card.name];
+  const label = (cd?.nameTh || card.name).split('(')[0].trim();
+  const img = cd?.image ? `<img src="${cd.image}" alt="" onerror="this.remove()">` : '';
+  return `${img}${suitPip(card)}<div class="card-fly-label">${escHtml(label)}</div>`;
+}
+function animateCardMotion({ playerId, kind, toId, cards }) {
+  if (STATE.currentScreen !== 'game' || !cards?.length) return;
+  const isMe = playerId === STATE.playerId;
+  const pile = document.getElementById('discard-pile')?.getBoundingClientRect();
+  if (!pile || !pile.width) return;
+  const W = 74, H = 104;   // ขนาดการ์ดบินมาตรฐาน
+  cards.forEach((card, i) => {
+    // ── จุดเริ่ม ──
+    let from = null;
+    if (isMe) {
+      const live = document.querySelector(`#my-hand .hand-card[data-cardid="${card.id}"]`);
+      if (live) { from = live.getBoundingClientRect(); live.style.visibility = 'hidden'; }
+      else from = STATE._handRects?.[card.id] || null;
+    }
+    if (!from) {
+      const s = seatRect(playerId);
+      if (!s) return;
+      from = { left: s.left + s.width / 2 - W / 2, top: s.top + s.height / 2 - H / 2, width: W, height: H };
+    }
+    // ── ปลายทาง ──
+    const cx = pile.left + pile.width / 2, cy = pile.top + pile.height / 2;
+    const spread = (i - (cards.length - 1) / 2) * 26;
+    let mid = null, end;
+    if (kind === 'equip' || kind === 'judge' || kind === 'give') {
+      const t = seatRect(kind === 'equip' ? playerId : (toId || playerId));
+      if (!t) return;
+      end = { x: t.left + t.width / 2 - W / 2, y: t.top + t.height / 2 - H / 2, s: 0.55, o: 0 };
+      mid = { x: cx - W / 2 + spread, y: cy - H / 2 - 30, s: 1.25, o: 1 };   // โชว์กลางโต๊ะแป๊บหนึ่งก่อน
+    } else if (kind === 'play') {
+      mid = { x: cx - W / 2 + spread, y: cy - H / 2 - 36, s: 1.45, o: 1 };   // ชูให้ทุกคนเห็นกลางโต๊ะ
+      end = { x: pile.left + pile.width / 2 - W / 2, y: pile.top + pile.height / 2 - H / 2, s: pile.width / W, o: 0.2 };
+    } else {   // discard
+      end = { x: pile.left + pile.width / 2 - W / 2 + spread * 0.3, y: pile.top + pile.height / 2 - H / 2,
+        s: pile.width / W, o: 0.25 };
+    }
+    const fly = document.createElement('div');
+    fly.className = `card-fly kind-${kind}`;
+    fly.innerHTML = cardFaceHTML(card);
+    fly.style.width = W + 'px'; fly.style.height = H + 'px';
+    fly.style.left = '0px'; fly.style.top = '0px';
+    document.body.appendChild(fly);
+    const s0 = from.width / W;
+    const rot = kind === 'discard' ? (Math.random() * 40 - 20) : 0;
+    const frames = [{ transform: `translate(${from.left}px, ${from.top}px) scale(${s0})`, opacity: 1 }];
+    if (mid) {
+      frames.push({ transform: `translate(${mid.x}px, ${mid.y}px) scale(${mid.s})`, opacity: 1, offset: 0.35 });
+      frames.push({ transform: `translate(${mid.x}px, ${mid.y}px) scale(${mid.s})`, opacity: 1, offset: 0.7 });
+    }
+    frames.push({ transform: `translate(${end.x}px, ${end.y}px) scale(${end.s}) rotate(${rot}deg)`, opacity: end.o });
+    const dur = mid ? 1250 : 520;
+    const anim = fly.animate(frames, { duration: dur, delay: i * 110, easing: 'cubic-bezier(.25,.8,.35,1)', fill: 'both' });
+    anim.onfinish = () => fly.remove();
+    setTimeout(() => fly.remove(), dur + i * 110 + 400);   // กันค้างกรณี animation ถูกยกเลิก
+  });
+  if (kind === 'discard' || kind === 'play') {
+    const pileEl = document.getElementById('discard-pile');
+    setTimeout(() => { pileEl?.classList.add('pile-bump'); setTimeout(() => pileEl?.classList.remove('pile-bump'), 260); },
+      (kind === 'play' ? 1150 : 480) + (cards.length - 1) * 110);
+  }
+}
+socket.on('cardMotion', (data) => {
+  // รอให้ roomUpdate ที่มาพร้อมกัน render เสร็จก่อน (ตำแหน่งที่นั่งจะได้ถูกต้อง)
+  requestAnimationFrame(() => animateCardMotion(data));
+});
 
 // ─── อนิเมชั่นเปิดไพ่ตัดสิน: เข้าคิวเล่นทีละใบ (กันซ้อนกันตอนตัดสินหลายใบ เช่น 洛神) ──
 function enqueueJudgment(data) {
@@ -1635,6 +1745,32 @@ function openRockAxeModal(targetName) {
   });
 }
 
+// ─── นางกาน Shen Zhi (神智): ฟื้น HP แล้ว เลือกตัวละครอื่นให้จั่วการ์ด ─────────────────
+//   ใช้หน้าต่างแยก (ไม่ทับหน้าต่างทักษะอื่นที่อาจเปิดพร้อมกัน)
+function openShenzhiModal(players) {
+  let ov = document.getElementById('modal-shenzhi');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'modal-shenzhi';
+    ov.className = 'modal-overlay';
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = `<div class="modal gold-frame" style="width:420px;max-width:92vw;text-align:center">
+    <h2 style="margin:0 0 8px;font-size:1.05rem;color:#d2a8e8">🧠 ความรอบคอบ (神智)</h2>
+    <div style="color:var(--text-dim);font-size:0.82rem;margin-bottom:14px">คุณฟื้น HP แล้ว — เลือกตัวละครอื่น 1 คนให้จั่วการ์ด 1 ใบ (2 ใบถ้ามือว่าง)</div>
+    <div class="skill-target-row" style="justify-content:center">${players.map(p =>
+      `<div class="skill-target" data-target="${p.id}">${escHtml(p.name)}<span style="opacity:.7;font-size:.75em"> · 🃏${p.handCount}${p.handCount === 0 ? ' (+2)' : ''}</span></div>`).join('')}</div>
+    <div style="color:var(--text-dim);font-size:0.72rem;margin-top:10px">ไม่เลือกภายใน 15 วินาที = ให้คนถัดไปตามที่นั่ง</div>
+  </div>`;
+  ov.classList.add('active');
+  ov.querySelectorAll('.skill-target').forEach(el => el.addEventListener('click', () => {
+    socket.emit('shenzhiPick', { targetId: el.dataset.target });
+    ov.classList.remove('active');
+  }));
+  clearTimeout(ov._t);
+  ov._t = setTimeout(() => ov.classList.remove('active'), 15500);
+}
+
 // ─── ขโมย/ทำลายสะพาน — เลือกการ์ดของเป้าหมาย (มือ/อุปกรณ์/ช่องตัดสิน) ──────────────
 function openTakeCardModal(mode, targetName, options) {
   const overlay = document.getElementById('modal-skill');
@@ -1868,7 +2004,7 @@ function openSkillModal() {
   const multiTarget = (sk.needs === 'card+target2');
   // เป้าหมายที่เลือกได้ (lijian/jieyin = ตัวละครอื่น; rende = อื่น; huatuo = ทุกคน)
   const targetPool = STATE.room.players.filter(p => p.hp > 0 &&
-    (sk.key === 'qingnang' ? true : p.id !== STATE.playerId));
+    (['qingnang', 'fanjian'].includes(sk.key) ? true : p.id !== STATE.playerId));
 
   let body = `<div style="color:var(--text-dim);font-size:0.8rem;margin-bottom:8px">${sk.desc}</div>`;
   if (sk.needs === 'confirm') {
@@ -2023,6 +2159,7 @@ function showGameOverOverlay(winner, msg) {
   </div>`;
   document.getElementById('go-leave').addEventListener('click', () => {
     overlay.remove();
+    window.WTFCam?.stop(false);
     socket.emit('leaveRoom');
     STATE.playerId = null; STATE.roomCode = null; STATE.room = null; STATE.gameOver = null;
     localStorage.removeItem('wtk_pid'); localStorage.removeItem('wtk_room');
@@ -2098,6 +2235,7 @@ document.getElementById('form-create').addEventListener('submit', (e) => {
       allowSpectators: document.getElementById('allow-spectators').checked,
       privateRoom: document.getElementById('private-room').checked,
       textChat: document.getElementById('text-chat').checked,
+      botLevel: document.getElementById('create-bot-level').value,
     }
   });
   document.getElementById('modal-create').classList.remove('active');
@@ -2157,6 +2295,40 @@ document.getElementById('btn-start')?.addEventListener('click', () => {
   socket.emit('startGame');
 });
 
+// ─── บอท: เพิ่มทีละตัว / เติมให้เต็มห้อง (Host) ─────────────────────────────
+document.getElementById('btn-add-bot')?.addEventListener('click', () => socket.emit('addBot', {}));
+document.getElementById('btn-fill-bots')?.addEventListener('click', () => socket.emit('addBot', { fill: true }));
+document.getElementById('lobby-bot-level')?.addEventListener('change', (e) => socket.emit('setBotLevel', { level: e.target.value }));
+
+// ─── เล่นคนเดียวกับบอท: สร้างห้องส่วนตัว + เติมบอท + เริ่มเกมทันที ────────────────
+document.getElementById('btn-solo')?.addEventListener('click', () => {
+  const inp = document.getElementById('solo-username');
+  if (inp && !inp.value) inp.value = STATE.username || '';
+  document.getElementById('modal-solo').classList.add('active');
+});
+document.getElementById('form-solo')?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const username = document.getElementById('solo-username').value.trim();
+  if (!username) { notify('กรุณาใส่ชื่อผู้ใช้', 'error'); return; }
+  STATE.username = username;
+  localStorage.setItem('wtk_name', username);
+  const bots = parseInt(document.getElementById('solo-bots').value) || 3;
+  socket.emit('createRoom', {
+    username,
+    settings: {
+      roomName: `ฝึกซ้อมกับบอท (${username})`,
+      playerLimit: bots + 1,
+      turnTimer: parseInt(document.getElementById('solo-timer').value),
+      allowSpectators: false,
+      privateRoom: true,
+      textChat: true,
+      soloBots: bots,
+      botLevel: document.getElementById('solo-bot-level').value,
+    },
+  });
+  document.getElementById('modal-solo').classList.remove('active');
+});
+
 // ─── Draft: ยืนยันเลือกตัวละคร ─────────────────────────────────────────────
 document.getElementById('btn-confirm-draft')?.addEventListener('click', () => {
   if (!STATE.draftSelected) { notify('เลือกตัวละครก่อน', 'error'); return; }
@@ -2189,8 +2361,8 @@ function openDrawChoiceModal(me) {
   if (me.character === 'zhangliao') {
     const targets = STATE.room.players.filter(p => p.hp > 0 && p.id !== me.id && (p.hand?.length || p.handCount));
     body += `<div style="color:var(--text-dim);font-size:0.78rem;margin:8px 0 6px">🥷 การโจมตีฉับพลัน (突袭) — เลือกสูงสุด 2 คนเพื่อริบไพ่แทนการจั่ว:</div>
-      <div class="skill-target-row" id="tuxi-targets">${STATE.room.players.filter(p => p.hp > 0 && p.id !== me.id).map(p =>
-        `<div class="skill-target" data-target="${p.id}">${p.username}</div>`).join('')}</div>
+      <div class="skill-target-row" id="tuxi-targets">${STATE.room.players.filter(p => p.hp > 0).map(p =>
+        `<div class="skill-target" data-target="${p.id}">${escHtml(p.username)}${p.id === me.id ? ' (คุณ)' : ''}</div>`).join('')}</div>
       <button class="btn btn-confirm" id="draw-tuxi" style="width:100%;margin-top:8px">🥷 ริบไพ่ (突袭)</button>`;
   }
   overlay.innerHTML = `<div class="modal gold-frame" style="width:420px;max-width:92vw;text-align:center">
@@ -2214,6 +2386,7 @@ function openDrawChoiceModal(me) {
 }
 
 document.getElementById('btn-leave-lobby').addEventListener('click', () => {
+  window.WTFCam?.stop(false);
   socket.emit('leaveRoom');
   STATE.playerId = null; STATE.roomCode = null; STATE.room = null;
   localStorage.removeItem('wtk_pid'); localStorage.removeItem('wtk_room');

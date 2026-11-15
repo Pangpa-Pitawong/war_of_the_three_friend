@@ -318,6 +318,21 @@ console.log('\n[LadyGan] Shen Zhi — on heal, another draws');
   check('ladygan healed to 3', p[0].hp === 3);
   check('other player drew (shen zhi)', p[1].hand.length === 1);
 }
+console.log('\n[LadyGan] Shen Zhi — chooses who draws (others only)');
+{
+  const p = [makePlayer(0, 'ladygan', { hp: 2 }), makePlayer(1, 'zhangfei', { hand: [card('z','basic')] }), makePlayer(2, 'guanyu')];
+  const g = makeGame(p, [card('a','basic'), card('b','basic'), card('c','basic')]);
+  g.heal(p[0], 1, p[0]);
+  check('heal goes to ladygan herself', p[0].hp === 3);
+  check('prompt opened (2+ others)', g.shenzhi && g.shenzhi.playerId === 'P0');
+  check('choosing self is rejected → falls back to another player', (g.resolveShenzhi('P0', 'P0'), p[0].hand.length === 0));
+  check('fallback gave card to next player', p[1].hand.length === 2);
+  g.heal(p[0], 1, p[0]);
+  g.resolveShenzhi('P0', 'P2');
+  check('chosen player with empty hand drew 2', p[2].hand.length === 2);
+  check('no prompt left', !g.shenzhi);
+  clearTimeout(g.shenzhiTimer);
+}
 
 // ─── Gong Sun Zan — Yi Cong (义从): distance modifier by hp ───
 console.log('\n[GongSunZan] Yi Cong — distance reduced at high hp');
@@ -338,6 +353,8 @@ console.log('\n[LiuBei] Ren De — give 2 cards → heal');
   g.useSkill('P0', { cardIds: [p[0].hand[0].id, p[0].hand[1].id], targetId: 'P1' });
   check('zhangfei received 2 cards', p[1].hand.length === 2);
   check('liubei healed to 4 (gave 2)', p[0].hp === 4);
+  const r = g.useSkill('P0', { cardIds: [p[0].hand[0].id], targetId: 'P0' });
+  check('ren de cannot give cards to self', r.ok === false && p[0].hand.length === 1);
 }
 
 // ─── Sun Shangxiang — Jie Yin (结姻): discard 2, both heal ───
