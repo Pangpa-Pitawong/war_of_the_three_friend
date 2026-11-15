@@ -222,8 +222,40 @@ console.log('\n[11] Sky Piercing Halberd — last card hits multiple');
   ];
   const g = makeGame(p);
   g.playCard('P0', p[0].hand[0].id, 'P1');
+  // ผู้โจมตีได้ "เลือก" เป้าหมายเพิ่ม (askHalberd) — ยังไม่เริ่มถามหลบจนกว่าจะเลือก
+  check('halberd choice opened (last card)', !!g.halberPending && !g.pending);
+  check('extra pool offers P2 (in range, not main target)', g.halberPending && g.halberPending.extraPool.some(x => x.id === 'P2'));
+  g.resolveHalberd('P0', ['P2']);
   check('group response started (groupQueue exists)', Array.isArray(g.groupQueue));
-  check('first victim pending', g.pending && g.pending.type === 'dodge');
+  check('first victim (main target) pending dodge', g.pending && g.pending.type === 'dodge' && g.pending.responderId === 'P1');
+  g.resolveResponse('P1', null);
+  check('P1 hit, then P2 asked to dodge', p[1].hp === 3 && g.pending && g.pending.responderId === 'P2');
+  g.destroy();
+}
+console.log('\n[11b] Sky Piercing Halberd — choose no extra targets');
+{
+  const p = [
+    makePlayer(0, 'caocao', { hand: [card('Attack', 'basic')], equipment: { weapon: card('Sky Piercing Halberd', 'weapon', '♠', 5, { range: 4 }), armor: null, atkMount: null, defMount: null } }),
+    makePlayer(1, 'zhangfei'), makePlayer(2, 'guanyu'),
+  ];
+  const g = makeGame(p);
+  g.playCard('P0', p[0].hand[0].id, 'P1');
+  g.resolveHalberd('P0', []);
+  check('only main target asked (no group)', !g.groupQueue && g.pending && g.pending.responderId === 'P1');
+  g.resolveResponse('P1', null);
+  check('only P1 damaged', p[1].hp === 3 && p[2].hp === 4);
+  g.destroy();
+}
+console.log('\n[11c] Sky Piercing Halberd — not the last card → normal single attack');
+{
+  const p = [
+    makePlayer(0, 'caocao', { hand: [card('Attack', 'basic'), card('Dodge', 'basic')], equipment: { weapon: card('Sky Piercing Halberd', 'weapon', '♠', 5, { range: 4 }), armor: null, atkMount: null, defMount: null } }),
+    makePlayer(1, 'zhangfei'), makePlayer(2, 'guanyu'),
+  ];
+  const g = makeGame(p);
+  g.playCard('P0', p[0].hand[0].id, 'P1');
+  check('no halberd choice, direct dodge request', !g.halberPending && g.pending && g.pending.responderId === 'P1');
+  g.destroy();
 }
 
 // ─── Test 12: Green Dragon Blade re-attacks after a dodge ───
